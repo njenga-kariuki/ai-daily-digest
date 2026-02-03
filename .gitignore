@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.log
+
+# Credentials
+credentials.json
+token.json
+twitter-token.json
+.env
+
+# Data files (generated)
+data/*.json
+data/unsent/

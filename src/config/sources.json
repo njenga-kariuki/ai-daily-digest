@@ -1,0 +1,26 @@
+{
+  "twitter": {
+    "bookmarkFolders": ["AI", "Tech"],
+    "lookbackHours": 48,
+    "maxBookmarks": 50
+  },
+  "gmail": {
+    "newsletterLabel": "AI-News",
+    "lookbackHours": 48
+  },
+  "output": {
+    "recipientEmail": "reader@example.com",
+    "digestTime": "07:00",
+    "timezone": "America/Los_Angeles"
+  },
+  "processing": {
+    "focusAreas": [
+      "LLM capabilities and benchmarks",
+      "AI agent frameworks and tools",
+      "Foundation model releases",
+      "AI coding assistants",
+      "Multimodal AI developments",
+      "AI infrastructure and deployment"
+    ]
+  }
+}
