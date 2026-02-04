@@ -96,7 +96,71 @@ async function getTwitterClient(): Promise<TwitterApi> {
   return new TwitterApi(tokens.accessToken);
 }
 
-export async function fetchBookmarks(): Promise<TwitterBookmark[]> {
+interface TweetData {
+  id: string;
+  text: string;
+  author_id?: string;
+  conversation_id?: string;
+  created_at?: string;
+  entities?: {
+    urls?: Array<{
+      expanded_url?: string;
+    }>;
+  };
+}
+
+async function fetchThreadContent(
+  client: TwitterApi,
+  conversationId: string,
+  authorId: string
+): Promise<string | undefined> {
+  try {
+    // Search for tweets in this conversation from the same author
+    const searchResult = await client.v2.search(
+      `conversation_id:${conversationId} from:${authorId}`,
+      {
+        max_results: 100,
+        "tweet.fields": ["created_at", "author_id"],
+        sort_order: "recency",
+      }
+    );
+
+    const tweets = searchResult.data?.data || [];
+
+    if (tweets.length <= 1) {
+      return undefined; // Not a thread (just the original tweet)
+    }
+
+    // Sort by created_at ascending (oldest first) for chronological order
+    const sortedTweets = tweets.sort((a, b) => {
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
+      return dateA - dateB;
+    });
+
+    // Combine tweet texts
+    const threadText = sortedTweets.map((t) => t.text).join("\n\n---\n\n");
+
+    logger.debug(
+      `Fetched thread with ${sortedTweets.length} tweets for conversation ${conversationId}`
+    );
+
+    return threadText;
+  } catch (error) {
+    logger.debug(
+      `Failed to fetch thread for conversation ${conversationId}:`,
+      error
+    );
+    return undefined;
+  }
+}
+
+export interface TwitterFetchResult {
+  bookmarks: TwitterBookmark[];
+  threadsExpanded: number;
+}
+
+export async function fetchBookmarks(): Promise<TwitterFetchResult> {
   logger.info("Fetching bookmarks from Twitter");
 
   const client = await getTwitterClient();
@@ -113,7 +177,7 @@ export async function fetchBookmarks(): Promise<TwitterBookmark[]> {
     const bookmarks = await client.v2.bookmarks({
       max_results: Math.min(maxBookmarks, 100),
       expansions: ["author_id"],
-      "tweet.fields": ["created_at", "entities", "text"],
+      "tweet.fields": ["created_at", "entities", "text", "conversation_id"],
       "user.fields": ["name", "username"],
     });
 
@@ -122,7 +186,13 @@ export async function fetchBookmarks(): Promise<TwitterBookmark[]> {
       (bookmarks.includes?.users || []).map((u) => [u.id, u])
     );
 
-    for (const tweet of bookmarks.data.data || []) {
+    // First pass: collect all bookmarks
+    const bookmarkData: Array<{
+      tweet: TweetData;
+      author: { name: string; username: string } | undefined;
+    }> = [];
+
+    for (const tweet of (bookmarks.data.data || []) as TweetData[]) {
       const createdAt = new Date(tweet.created_at || Date.now());
 
       // Skip tweets older than lookback period
@@ -131,6 +201,14 @@ export async function fetchBookmarks(): Promise<TwitterBookmark[]> {
       }
 
       const author = users.get(tweet.author_id || "");
+      bookmarkData.push({ tweet, author });
+    }
+
+    logger.info(`Processing ${bookmarkData.length} bookmarks within lookback period`);
+
+    // Second pass: fetch thread content for threaded tweets
+    for (const { tweet, author } of bookmarkData) {
+      const createdAt = new Date(tweet.created_at || Date.now());
 
       // Extract URLs from entities and text
       const urls: string[] = [];
@@ -147,18 +225,36 @@ export async function fetchBookmarks(): Promise<TwitterBookmark[]> {
         (url) => !url.includes("twitter.com") && !url.includes("x.com")
       );
 
+      // Check if this is a thread and fetch thread content
+      let threadContent: string | undefined;
+      if (tweet.conversation_id && tweet.author_id) {
+        // Only fetch thread if the tweet is part of a conversation
+        // and we have the author's ID to filter
+        threadContent = await fetchThreadContent(
+          client,
+          tweet.conversation_id,
+          tweet.author_id
+        );
+      }
+
       results.push({
         id: tweet.id,
         text: tweet.text,
         authorName: author?.name || "Unknown",
         authorUsername: author?.username || "unknown",
+        authorId: tweet.author_id,
         createdAt,
         urls: uniqueUrls,
+        conversationId: tweet.conversation_id,
+        threadContent,
       });
     }
 
-    logger.info(`Fetched ${results.length} bookmarks from last ${lookbackHours}h`);
-    return results;
+    const threadsExpanded = results.filter((r) => r.threadContent).length;
+    logger.info(
+      `Fetched ${results.length} bookmarks from last ${lookbackHours}h (${threadsExpanded} threads expanded)`
+    );
+    return { bookmarks: results, threadsExpanded };
   } catch (error: any) {
     if (error.code === 403) {
       logger.error(

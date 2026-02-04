@@ -59,6 +59,9 @@ async function runDigest(): Promise<void> {
     gmailCount: 0,
     articlesExtracted: 0,
     failedExtractions: 0,
+    youtubeWithTranscript: 0,
+    youtubeMetadataOnly: 0,
+    threadsExpanded: 0,
   };
 
   // Fetch sources in parallel
@@ -71,8 +74,9 @@ async function runDigest(): Promise<void> {
   ]);
 
   if (bookmarksResult.status === "fulfilled") {
-    bookmarks = filterUnprocessed("twitter", bookmarksResult.value);
+    bookmarks = filterUnprocessed("twitter", bookmarksResult.value.bookmarks);
     stats.twitterCount = bookmarks.length;
+    stats.threadsExpanded = bookmarksResult.value.threadsExpanded;
   } else {
     logger.error("Twitter fetch failed", bookmarksResult.reason);
     errors.push("Twitter: " + (bookmarksResult.reason?.message || "fetch failed"));
@@ -98,9 +102,12 @@ async function runDigest(): Promise<void> {
   ];
 
   // Extract article content
-  const extractedArticles = await extractArticles(allUrls);
-  stats.articlesExtracted = extractedArticles.size;
-  stats.failedExtractions = allUrls.length - extractedArticles.size;
+  const extractionResult = await extractArticles(allUrls);
+  const extractedArticles = extractionResult.articles;
+  stats.articlesExtracted = extractionResult.stats.articlesExtracted;
+  stats.failedExtractions = extractionResult.stats.failedExtractions;
+  stats.youtubeWithTranscript = extractionResult.stats.youtubeWithTranscript;
+  stats.youtubeMetadataOnly = extractionResult.stats.youtubeMetadataOnly;
 
   // Convert to SourceItems
   const sourceItems: SourceItem[] = [];

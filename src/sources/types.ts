@@ -14,8 +14,11 @@ export interface TwitterBookmark {
   text: string;
   authorName: string;
   authorUsername: string;
+  authorId?: string;
   createdAt: Date;
   urls: string[];
+  conversationId?: string;
+  threadContent?: string; // Combined content from thread (author's tweets only)
 }
 
 export interface GmailNewsletter {
@@ -34,6 +37,7 @@ export interface ExtractedArticle {
   author?: string;
   publishedAt?: Date;
   siteName?: string;
+  hasTranscript?: boolean; // For YouTube videos: whether transcript was extracted
 }
 
 export interface SummarizedItem extends SourceItem {
@@ -59,6 +63,9 @@ export interface Digest {
     gmailCount: number;
     articlesExtracted: number;
     failedExtractions: number;
+    youtubeWithTranscript?: number;
+    youtubeMetadataOnly?: number;
+    threadsExpanded?: number;
   };
   errors: string[];
 }

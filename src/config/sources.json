@@ -1,16 +1,16 @@
 {
   "twitter": {
     "bookmarkFolders": ["AI", "Tech"],
-    "lookbackHours": 48,
+    "lookbackHours": 24,
     "maxBookmarks": 50
   },
   "gmail": {
     "newsletterLabel": "AI-News",
-    "lookbackHours": 48
+    "lookbackHours": 24
   },
   "output": {
     "recipientEmail": "reader@example.com",
-    "digestTime": "07:00",
+    "digestTime": "05:00",
     "timezone": "America/Los_Angeles"
   },
   "processing": {

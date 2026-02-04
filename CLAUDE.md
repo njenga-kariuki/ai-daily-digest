@@ -91,3 +91,40 @@ src/
 - `data/digest-history.json` - Past 30 digests
 - `data/processed-ids.json` - Deduplication tracking
 - `data/unsent/` - Failed email sends (manual retry)
+
+## Extraction Architecture
+
+The digest quality depends entirely on extraction quality. More content → better summaries.
+
+### Specialized Extractors
+
+| Extractor | Package | Quality Signal |
+|-----------|---------|----------------|
+| YouTube | `youtube-transcript-plus` | Look for "Extracted transcript (N segments)" in logs. "Metadata only" = degraded |
+| GitHub | GitHub API (unauthenticated) | Should return repo description + README content |
+| JS-heavy sites | Puppeteer | Fallback when static extraction fails |
+| General articles | `@extractus/article-extractor` → `@mozilla/readability` → Puppeteer | Multi-stage fallback chain |
+| Twitter | Twitter API v2 | "N threads expanded" indicates thread content captured |
+
+### Package Selection Criteria
+
+Prefer packages that:
+- Use official/stable APIs (InnerTube, GitHub REST API) over scraping
+- Are actively maintained (check npm last publish date)
+- Handle errors explicitly (not silent empty returns)
+
+### Quality Indicators in Logs
+
+| Log Message | Meaning |
+|-------------|---------|
+| `Extracted transcript for "..." (N segments)` | ✓ Full YouTube content |
+| `Metadata only for "..."` | ⚠ YouTube fallback - limited summarization |
+| `N threads expanded` | ✓ Twitter threads captured |
+| `Extracted N articles, M failed/skipped` | Check if M is too high |
+
+### Known Failure Modes
+
+- **YouTube**: Videos without captions return metadata-only (expected)
+- **Twitter threads**: Only author's tweets are captured (by design)
+- **Paywalled articles**: Will fail extraction (expected)
+- **Rate limiting**: GitHub has 60 req/hr unauthenticated limit

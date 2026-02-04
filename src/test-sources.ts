@@ -30,8 +30,9 @@ async function testGmail(): Promise<boolean> {
 async function testTwitter(): Promise<boolean> {
   logger.info("Testing Twitter API...");
   try {
-    const bookmarks = await fetchBookmarks();
-    logger.info(`Twitter: Found ${bookmarks.length} bookmarks`);
+    const result = await fetchBookmarks();
+    const bookmarks = result.bookmarks;
+    logger.info(`Twitter: Found ${bookmarks.length} bookmarks (${result.threadsExpanded} threads expanded)`);
     if (bookmarks.length > 0) {
       logger.info(`  First: @${bookmarks[0].authorUsername}: ${bookmarks[0].text.slice(0, 60)}...`);
       logger.info(`  URLs found: ${bookmarks[0].urls.length}`);
