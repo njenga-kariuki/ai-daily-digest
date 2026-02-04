@@ -1,7 +1,7 @@
 {
   "twitter": {
     "bookmarkFolders": ["AI", "Tech"],
-    "lookbackHours": 24,
+    "lookbackHours": 30,
     "maxBookmarks": 50,
     "monitoredAccounts": [
       "karpathy",
