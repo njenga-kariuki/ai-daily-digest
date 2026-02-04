@@ -3,7 +3,7 @@ import { CronJob } from "cron";
 import { createLogger } from "./utils/logger.js";
 import { sourcesConfig } from "./config/settings.js";
 import { fetchNewsletters } from "./sources/gmail.js";
-import { fetchBookmarks } from "./sources/twitter.js";
+import { fetchTwitterContent } from "./sources/twitter.js";
 import { extractArticles } from "./sources/article-extractor.js";
 import { summarizeItems } from "./processing/summarizer.js";
 import { buildDigest } from "./processing/digest-builder.js";
@@ -65,21 +65,27 @@ async function runDigest(): Promise<void> {
   };
 
   // Fetch sources in parallel
-  let bookmarks: TwitterBookmark[] = [];
+  let allTwitterContent: TwitterBookmark[] = [];
   let newsletters: GmailNewsletter[] = [];
 
-  const [bookmarksResult, newslettersResult] = await Promise.allSettled([
-    fetchBookmarks(),
+  const [twitterResult, newslettersResult] = await Promise.allSettled([
+    fetchTwitterContent(),
     fetchNewsletters(),
   ]);
 
-  if (bookmarksResult.status === "fulfilled") {
-    bookmarks = filterUnprocessed("twitter", bookmarksResult.value.bookmarks);
-    stats.twitterCount = bookmarks.length;
-    stats.threadsExpanded = bookmarksResult.value.threadsExpanded;
+  if (twitterResult.status === "fulfilled") {
+    // Merge bookmarks and account tweets, then deduplicate
+    const { bookmarks, accountTweets, threadsExpanded } = twitterResult.value;
+    const combined = [...bookmarks, ...accountTweets];
+    allTwitterContent = filterUnprocessed("twitter", combined);
+    stats.twitterCount = allTwitterContent.length;
+    stats.threadsExpanded = threadsExpanded;
+    logger.info(
+      `Twitter sources: ${bookmarks.length} bookmarks, ${accountTweets.length} from monitored accounts`
+    );
   } else {
-    logger.error("Twitter fetch failed", bookmarksResult.reason);
-    errors.push("Twitter: " + (bookmarksResult.reason?.message || "fetch failed"));
+    logger.error("Twitter fetch failed", twitterResult.reason);
+    errors.push("Twitter: " + (twitterResult.reason?.message || "fetch failed"));
   }
 
   if (newslettersResult.status === "fulfilled") {
@@ -90,14 +96,14 @@ async function runDigest(): Promise<void> {
     errors.push("Gmail: " + (newslettersResult.reason?.message || "fetch failed"));
   }
 
-  if (bookmarks.length === 0 && newsletters.length === 0) {
+  if (allTwitterContent.length === 0 && newsletters.length === 0) {
     logger.warn("No new content to process");
     return;
   }
 
   // Collect all URLs for article extraction
   const allUrls = [
-    ...bookmarks.flatMap((b) => b.urls),
+    ...allTwitterContent.flatMap((b) => b.urls),
     ...newsletters.flatMap((n) => n.urls),
   ];
 
@@ -112,10 +118,10 @@ async function runDigest(): Promise<void> {
   // Convert to SourceItems
   const sourceItems: SourceItem[] = [];
 
-  for (const bookmark of bookmarks) {
-    const articleUrl = bookmark.urls[0];
+  for (const tweet of allTwitterContent) {
+    const articleUrl = tweet.urls[0];
     const article = articleUrl ? extractedArticles.get(articleUrl) : undefined;
-    sourceItems.push(twitterToSourceItem(bookmark, article?.content));
+    sourceItems.push(twitterToSourceItem(tweet, article?.content));
   }
 
   for (const newsletter of newsletters) {
@@ -139,7 +145,7 @@ async function runDigest(): Promise<void> {
   saveDigest(digest);
   markAsProcessed(
     "twitter",
-    bookmarks.map((b) => b.id)
+    allTwitterContent.map((t) => t.id)
   );
   markAsProcessed(
     "gmail",

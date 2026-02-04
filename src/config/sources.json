@@ -2,7 +2,29 @@
   "twitter": {
     "bookmarkFolders": ["AI", "Tech"],
     "lookbackHours": 24,
-    "maxBookmarks": 50
+    "maxBookmarks": 50,
+    "monitoredAccounts": [
+      "karpathy",
+      "ylecun",
+      "sama",
+      "daboross",
+      "emaborodkin",
+      "_jasonwei",
+      "jeffdean",
+      "DrJimFan",
+      "swaborod",
+      "fchollet",
+      "simonw",
+      "jeremyphoward",
+      "emollick",
+      "hwchase17",
+      "baborod"
+    ],
+    "accountSettings": {
+      "maxTweetsPerAccount": 10,
+      "includeReplies": false,
+      "includeRetweets": false
+    }
   },
   "gmail": {
     "newsletterLabel": "AI-News",

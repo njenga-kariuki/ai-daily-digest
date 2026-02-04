@@ -157,21 +157,184 @@ async function fetchThreadContent(
 
 export interface TwitterFetchResult {
   bookmarks: TwitterBookmark[];
+  accountTweets: TwitterBookmark[];
   threadsExpanded: number;
 }
 
+/** @deprecated Use fetchTwitterContent() instead for combined bookmarks + account monitoring */
 export async function fetchBookmarks(): Promise<TwitterFetchResult> {
-  logger.info("Fetching bookmarks from Twitter");
+  return fetchTwitterContent();
+}
+
+async function fetchAccountTimelines(
+  client: TwitterApi,
+  cutoffTime: Date
+): Promise<{ tweets: TwitterBookmark[]; threadsExpanded: number }> {
+  const { monitoredAccounts, accountSettings } = sourcesConfig.twitter;
+
+  if (!monitoredAccounts || monitoredAccounts.length === 0) {
+    return { tweets: [], threadsExpanded: 0 };
+  }
+
+  const maxTweetsPerAccount = accountSettings?.maxTweetsPerAccount ?? 10;
+  const includeReplies = accountSettings?.includeReplies ?? false;
+  const includeRetweets = accountSettings?.includeRetweets ?? false;
+
+  logger.info(`Fetching timelines for ${monitoredAccounts.length} monitored accounts`);
+
+  const results: TwitterBookmark[] = [];
+  let totalThreadsExpanded = 0;
+
+  // Batch lookup usernames to get user IDs (more efficient than individual lookups)
+  const userLookup = await client.v2.usersByUsernames(monitoredAccounts, {
+    "user.fields": ["id", "name", "username"],
+  });
+
+  const userMap = new Map(
+    (userLookup.data || []).map((u) => [u.username.toLowerCase(), u])
+  );
+
+  const foundUsers = userLookup.data || [];
+  const notFound = monitoredAccounts.filter(
+    (username) => !userMap.has(username.toLowerCase())
+  );
+
+  if (notFound.length > 0) {
+    logger.warn(`Could not find users: ${notFound.join(", ")}`);
+  }
+
+  // Fetch timeline for each user with rate limiting delay
+  for (const user of foundUsers) {
+    try {
+      // Build exclude array based on settings
+      const exclude: ("retweets" | "replies")[] = [];
+      if (!includeRetweets) exclude.push("retweets");
+      if (!includeReplies) exclude.push("replies");
+
+      const timeline = await client.v2.userTimeline(user.id, {
+        max_results: maxTweetsPerAccount,
+        exclude: exclude.length > 0 ? exclude : undefined,
+        "tweet.fields": ["created_at", "entities", "text", "conversation_id", "author_id"],
+        expansions: ["author_id"],
+        "user.fields": ["name", "username"],
+      });
+
+      const tweets = (timeline.data.data || []) as TweetData[];
+      let accountTweetsAdded = 0;
+
+      for (const tweet of tweets) {
+        const createdAt = new Date(tweet.created_at || Date.now());
+
+        // Skip tweets older than lookback period
+        if (createdAt < cutoffTime) {
+          continue;
+        }
+
+        // Extract URLs
+        const urls: string[] = [];
+        if (tweet.entities?.urls) {
+          for (const urlEntity of tweet.entities.urls) {
+            if (urlEntity.expanded_url) {
+              urls.push(urlEntity.expanded_url);
+            }
+          }
+        }
+        urls.push(...extractUrls(tweet.text));
+        const uniqueUrls = [...new Set(urls)].filter(
+          (url) => !url.includes("twitter.com") && !url.includes("x.com")
+        );
+
+        // Fetch thread content if applicable
+        let threadContent: string | undefined;
+        if (tweet.conversation_id && tweet.author_id) {
+          threadContent = await fetchThreadContent(
+            client,
+            tweet.conversation_id,
+            tweet.author_id
+          );
+          if (threadContent) {
+            totalThreadsExpanded++;
+          }
+        }
+
+        results.push({
+          id: tweet.id,
+          text: tweet.text,
+          authorName: user.name,
+          authorUsername: user.username,
+          authorId: user.id,
+          createdAt,
+          urls: uniqueUrls,
+          conversationId: tweet.conversation_id,
+          threadContent,
+          sourceType: "account",
+          sourceAccount: user.username,
+        });
+
+        accountTweetsAdded++;
+      }
+
+      if (accountTweetsAdded > 0) {
+        logger.debug(`Fetched ${accountTweetsAdded} tweets from @${user.username}`);
+      }
+
+      // Rate limiting: 1 second delay between account fetches
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error: any) {
+      logger.error(`Failed to fetch timeline for @${user.username}:`, error.message);
+    }
+  }
+
+  logger.info(
+    `Fetched ${results.length} tweets from ${foundUsers.length} monitored accounts (${totalThreadsExpanded} threads expanded)`
+  );
+
+  return { tweets: results, threadsExpanded: totalThreadsExpanded };
+}
+
+export async function fetchTwitterContent(): Promise<TwitterFetchResult> {
+  logger.info("Fetching Twitter content (bookmarks + monitored accounts)");
 
   const client = await getTwitterClient();
-  const { lookbackHours, maxBookmarks } = sourcesConfig.twitter;
-
+  const { lookbackHours } = sourcesConfig.twitter;
   const cutoffTime = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+
+  // Fetch bookmarks and account timelines in parallel
+  const [bookmarksResult, accountResult] = await Promise.allSettled([
+    fetchBookmarksInternal(client, cutoffTime),
+    fetchAccountTimelines(client, cutoffTime),
+  ]);
+
+  let bookmarks: TwitterBookmark[] = [];
+  let accountTweets: TwitterBookmark[] = [];
+  let threadsExpanded = 0;
+
+  if (bookmarksResult.status === "fulfilled") {
+    bookmarks = bookmarksResult.value.bookmarks;
+    threadsExpanded += bookmarksResult.value.threadsExpanded;
+  } else {
+    logger.error("Bookmark fetch failed:", bookmarksResult.reason);
+  }
+
+  if (accountResult.status === "fulfilled") {
+    accountTweets = accountResult.value.tweets;
+    threadsExpanded += accountResult.value.threadsExpanded;
+  } else {
+    logger.error("Account timeline fetch failed:", accountResult.reason);
+  }
+
+  return { bookmarks, accountTweets, threadsExpanded };
+}
+
+async function fetchBookmarksInternal(
+  client: TwitterApi,
+  cutoffTime: Date
+): Promise<{ bookmarks: TwitterBookmark[]; threadsExpanded: number }> {
+  const { maxBookmarks } = sourcesConfig.twitter;
 
   try {
     // Get authenticated user's ID
     const me = await client.v2.me();
-    const userId = me.data.id;
 
     // Fetch bookmarks
     const bookmarks = await client.v2.bookmarks({
@@ -228,8 +391,6 @@ export async function fetchBookmarks(): Promise<TwitterFetchResult> {
       // Check if this is a thread and fetch thread content
       let threadContent: string | undefined;
       if (tweet.conversation_id && tweet.author_id) {
-        // Only fetch thread if the tweet is part of a conversation
-        // and we have the author's ID to filter
         threadContent = await fetchThreadContent(
           client,
           tweet.conversation_id,
@@ -247,12 +408,13 @@ export async function fetchBookmarks(): Promise<TwitterFetchResult> {
         urls: uniqueUrls,
         conversationId: tweet.conversation_id,
         threadContent,
+        sourceType: "bookmark",
       });
     }
 
     const threadsExpanded = results.filter((r) => r.threadContent).length;
     logger.info(
-      `Fetched ${results.length} bookmarks from last ${lookbackHours}h (${threadsExpanded} threads expanded)`
+      `Fetched ${results.length} bookmarks from last ${sourcesConfig.twitter.lookbackHours}h (${threadsExpanded} threads expanded)`
     );
     return { bookmarks: results, threadsExpanded };
   } catch (error: any) {

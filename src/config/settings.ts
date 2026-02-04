@@ -10,6 +10,12 @@ export interface SourcesConfig {
     bookmarkFolders: string[];
     lookbackHours: number;
     maxBookmarks: number;
+    monitoredAccounts?: string[];
+    accountSettings?: {
+      maxTweetsPerAccount?: number;
+      includeReplies?: boolean;
+      includeRetweets?: boolean;
+    };
   };
   gmail: {
     newsletterLabel: string;

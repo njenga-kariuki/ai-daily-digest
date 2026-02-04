@@ -19,6 +19,8 @@ export interface TwitterBookmark {
   urls: string[];
   conversationId?: string;
   threadContent?: string; // Combined content from thread (author's tweets only)
+  sourceType: "bookmark" | "account";
+  sourceAccount?: string; // Which account (if sourceType === "account")
 }
 
 export interface GmailNewsletter {
