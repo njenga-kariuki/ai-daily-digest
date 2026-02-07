@@ -156,54 +156,70 @@ async function extractWithExtractus(
   }
 }
 
+async function resolveUrl(url: string): Promise<string> {
+  if (!url.includes('t.co/')) return url;
+  try {
+    const response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    return response.url;
+  } catch {
+    return url;
+  }
+}
+
 export async function extractArticle(
   url: string
 ): Promise<ExtractedArticle | null> {
+  // Resolve t.co shortened URLs first
+  const resolvedUrl = await resolveUrl(url);
+  if (resolvedUrl !== url) {
+    logger.debug(`Resolved ${url} -> ${resolvedUrl}`);
+  }
+
   // Skip social media domains
-  if (shouldSkipUrl(url)) {
-    logger.debug(`Skipping URL: ${url}`);
+  if (shouldSkipUrl(resolvedUrl)) {
+    logger.debug(`Skipping URL: ${resolvedUrl}`);
     return null;
   }
 
   // Handle GitHub URLs specially
-  if (isGitHubUrl(url)) {
-    logger.debug(`Using GitHub extractor for: ${url}`);
-    return extractGitHubContent(url);
+  if (isGitHubUrl(resolvedUrl)) {
+    logger.debug(`Using GitHub extractor for: ${resolvedUrl}`);
+    return extractGitHubContent(resolvedUrl);
   }
 
   // Handle YouTube URLs specially
-  if (isYouTubeUrl(url)) {
-    logger.debug(`Using YouTube extractor for: ${url}`);
-    return extractYouTubeContent(url);
+  if (isYouTubeUrl(resolvedUrl)) {
+    logger.debug(`Using YouTube extractor for: ${resolvedUrl}`);
+    return extractYouTubeContent(resolvedUrl);
   }
 
-  logger.debug(`Extracting article: ${url}`);
+  logger.debug(`Extracting article: ${resolvedUrl}`);
 
   // Phase 1: Try @extractus/article-extractor
-  let result = await extractWithExtractus(url);
+  let result = await extractWithExtractus(resolvedUrl);
   if (result) {
     return result;
   }
 
   // Phase 2: Try @mozilla/readability with raw HTML fetch
-  const html = await fetchWithRetry(url);
+  const html = await fetchWithRetry(resolvedUrl);
   if (html) {
-    result = await extractWithReadability(url, html);
+    result = await extractWithReadability(resolvedUrl, html);
     if (result) {
       return result;
     }
   }
 
   // Phase 3: For JS-heavy sites or when both extractors fail, try Puppeteer
-  if (isJsHeavySite(url) || (!result && html && html.length > 1000)) {
-    logger.debug(`Trying Puppeteer fallback for: ${url}`);
-    result = await extractWithPuppeteer(url);
+  if (isJsHeavySite(resolvedUrl) || (!result && html && html.length > 1000)) {
+    logger.debug(`Trying Puppeteer fallback for: ${resolvedUrl}`);
+    result = await extractWithPuppeteer(resolvedUrl);
     if (result) {
       return result;
     }
   }
 
-  logger.debug(`All extraction methods failed for: ${url}`);
+  logger.debug(`All extraction methods failed for: ${resolvedUrl}`);
   return null;
 }
 

@@ -1,4 +1,9 @@
-import type { Digest, SummarizedItem, ThemeSummary, ExecutiveBrief } from "../sources/types.js";
+import type {
+  Digest,
+  SummarizedItem,
+  SynthesizedTheme,
+  ExecutiveBrief,
+} from "../sources/types.js";
 
 // Color palette - executive minimalist
 const COLORS = {
@@ -32,51 +37,16 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function renderDivider(): string {
-  return `<div style="border-top: 1px solid ${COLORS.divider}; margin: 24px 0;"></div>`;
-}
-
 function renderSectionDivider(): string {
   return `<div style="border-top: 1px solid ${COLORS.divider}; margin: 48px 0;"></div>`;
 }
 
+function renderDivider(): string {
+  return `<div style="border-top: 1px solid ${COLORS.divider}; margin: 24px 0;"></div>`;
+}
+
 function renderLabel(text: string): string {
   return `<p style="margin: 0 0 12px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: ${COLORS.tertiary};">${escapeHtml(text)}</p>`;
-}
-
-function getSourceIndicator(source: "twitter" | "gmail"): string {
-  return source === "twitter" ? "X" : "Email";
-}
-
-function renderItem(item: SummarizedItem, index: number): string {
-  const link = item.url
-    ? `<a href="${escapeHtml(item.url)}" style="color: ${COLORS.text}; text-decoration: underline;">${escapeHtml(item.title)}</a>`
-    : escapeHtml(item.title);
-
-  const sourceIndicator = getSourceIndicator(item.source);
-  const topics = item.topics.length > 0 ? item.topics.join(", ") : "";
-
-  const takeaways =
-    item.keyTakeaways.length > 0
-      ? `<div style="margin: 12px 0 0 0; color: ${COLORS.secondary}; font-size: 14px; line-height: 1.6;">
-        ${item.keyTakeaways.map((t) => `<div style="margin: 6px 0;">— ${escapeHtml(t)}</div>`).join("")}
-      </div>`
-      : "";
-
-  return `
-    <div style="margin-bottom: 24px;">
-      <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: ${COLORS.text}; line-height: 1.4;">
-        ${index + 1}. ${link}
-      </h3>
-      <p style="margin: 0; color: ${COLORS.secondary}; font-size: 14px; line-height: 1.6;">
-        ${escapeHtml(item.summary)}
-      </p>
-      ${takeaways}
-      <p style="margin: 10px 0 0 0; font-size: 12px; color: ${COLORS.tertiary};">
-        ${sourceIndicator}${topics ? ` · ${escapeHtml(topics)}` : ""}
-      </p>
-    </div>
-  `;
 }
 
 function renderExecutiveBrief(brief: ExecutiveBrief): string {
@@ -102,27 +72,31 @@ function renderExecutiveBrief(brief: ExecutiveBrief): string {
   `;
 }
 
-function renderTheme(theme: ThemeSummary, index: number): string {
-  const keyPointsHtml =
-    theme.keyPoints.length > 0
+function renderSynthesizedTheme(
+  theme: SynthesizedTheme,
+  index: number
+): string {
+  const insightsHtml =
+    theme.keyInsights.length > 0
       ? `<div style="margin: 16px 0 0 0; color: ${COLORS.secondary}; font-size: 14px; line-height: 1.6;">
-        ${renderLabel("Key Points")}
-        ${theme.keyPoints.map((p) => `<div style="margin: 6px 0;">— ${escapeHtml(p)}</div>`).join("")}
+        ${renderLabel("Key Insights")}
+        ${theme.keyInsights.map((p) => `<div style="margin: 6px 0;">— ${escapeHtml(p)}</div>`).join("")}
       </div>`
       : "";
 
   const sourcesHtml =
-    theme.contributingSources.length > 0
+    theme.sources.length > 0
       ? `<div style="margin-top: 16px;">
-        ${theme.contributingSources
+        ${theme.sources
           .map(
             (src) =>
-              `<div style="margin-bottom: 12px;">
+              `<div style="margin-bottom: 10px;">
             <p style="margin: 0; font-size: 13px; font-style: italic; color: ${COLORS.secondary};">
               "${escapeHtml(src.snippet)}"
             </p>
             <p style="margin: 4px 0 0 0; font-size: 12px; color: ${COLORS.tertiary};">
               — ${src.url ? `<a href="${escapeHtml(src.url)}" style="color: ${COLORS.tertiary}; text-decoration: underline;">${escapeHtml(src.author)}</a>` : escapeHtml(src.author)}
+              <span style="margin-left: 6px; font-size: 11px;">${escapeHtml(src.sourceType)}</span>
             </p>
           </div>`
           )
@@ -131,15 +105,74 @@ function renderTheme(theme: ThemeSummary, index: number): string {
       : "";
 
   return `
-    <div style="margin-bottom: 32px;">
-      <h3 style="margin: 0 0 12px 0; font-size: 15px; font-weight: 600; color: ${COLORS.text};">
+    <div style="margin-bottom: 36px;">
+      <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: ${COLORS.text};">
         ${index + 1}. ${escapeHtml(theme.theme)}
       </h3>
-      <p style="margin: 0; color: ${COLORS.secondary}; font-size: 14px; line-height: 1.6;">
-        ${escapeHtml(theme.summary)}
+      <p style="margin: 0; color: ${COLORS.text}; font-size: 14px; line-height: 1.7;">
+        ${escapeHtml(theme.narrative)}
       </p>
-      ${keyPointsHtml}
+      ${insightsHtml}
       ${sourcesHtml}
+    </div>
+  `;
+}
+
+function getSourceTag(item: SummarizedItem): string {
+  if (item.source === "gmail") {
+    return item.newsletterName || "Newsletter";
+  }
+  if (item.twitterSourceType === "account") {
+    return "Community";
+  }
+  return "Bookmark";
+}
+
+function renderSourceIndex(items: SummarizedItem[]): string {
+  // Group by source type
+  const bookmarks = items.filter(
+    (i) => i.source === "twitter" && i.twitterSourceType !== "account"
+  );
+  const newsletters = items.filter((i) => i.source === "gmail");
+  const community = items.filter(
+    (i) => i.source === "twitter" && i.twitterSourceType === "account"
+  );
+
+  function renderGroup(
+    label: string,
+    groupItems: SummarizedItem[]
+  ): string {
+    if (groupItems.length === 0) return "";
+
+    const itemsHtml = groupItems
+      .map((item) => {
+        const title = item.url
+          ? `<a href="${escapeHtml(item.url)}" style="color: ${COLORS.text}; text-decoration: underline; font-weight: 500;">${escapeHtml(item.title)}</a>`
+          : `<span style="font-weight: 500;">${escapeHtml(item.title)}</span>`;
+
+        const tag = getSourceTag(item);
+
+        return `<div style="margin-bottom: 12px;">
+          <div style="font-size: 14px; line-height: 1.4;">${title}</div>
+          <div style="font-size: 13px; color: ${COLORS.secondary}; margin-top: 2px;">${escapeHtml(item.summary.split(".")[0])}.</div>
+          <div style="font-size: 11px; color: ${COLORS.tertiary}; margin-top: 2px;">${escapeHtml(tag)}</div>
+        </div>`;
+      })
+      .join("");
+
+    return `
+      <div style="margin-bottom: 24px;">
+        ${renderLabel(label)}
+        ${itemsHtml}
+      </div>
+    `;
+  }
+
+  return `
+    <div style="margin-bottom: 48px;">
+      ${renderGroup("Bookmarks", bookmarks)}
+      ${renderGroup("Newsletters", newsletters)}
+      ${renderGroup("Community", community)}
     </div>
   `;
 }
@@ -152,63 +185,23 @@ export function renderDigestHtml(digest: Digest): string {
     ? renderExecutiveBrief(digest.executiveBrief)
     : "";
 
-  // Executive Summary
-  const executiveSummaryHtml = `
-    <div style="margin-bottom: 48px;">
-      ${renderLabel("Summary")}
-      <p style="margin: 0; font-size: 14px; line-height: 1.7; color: ${COLORS.text};">
-        ${escapeHtml(digest.executiveSummary)}
-      </p>
-    </div>
-  `;
-
-  // Featured section (from bookmarks)
-  const featuredHtml =
-    digest.featured.length > 0
-      ? `
-    <div style="margin-bottom: 48px;">
-      ${renderLabel("Featured")}
-      ${digest.featured.map((item, i) => renderItem(item, i)).join("")}
-    </div>
-  `
-      : "";
-
-  // AI Community Pulse (from account themes)
+  // Synthesized Themes
   const themesHtml =
-    digest.accountThemes.length > 0
+    digest.themes.length > 0
       ? `
     <div style="margin-bottom: 48px;">
-      ${renderLabel("Community Pulse")}
-      ${digest.accountThemes.map((theme, i) => renderTheme(theme, i)).join("")}
+      ${digest.themes.map((theme, i) => renderSynthesizedTheme(theme, i)).join("")}
     </div>
   `
       : "";
 
-  // Top Stories
-  const topStoriesHtml =
-    digest.topStories.length > 0
-      ? `
-    <div style="margin-bottom: 48px;">
-      ${renderLabel("Top Stories")}
-      ${digest.topStories.map((item, i) => renderItem(item, i)).join("")}
-    </div>
-  `
-      : "";
-
-  // Topic Sections
-  const sectionsHtml = digest.sections
-    .map(
-      (section) => `
-      <div style="margin-bottom: 48px;">
-        ${renderLabel(section.topic)}
-        ${section.items.map((item, i) => renderItem(item, i)).join("")}
-      </div>
-    `
-    )
-    .join("");
+  // Source Index
+  const sourceIndexHtml =
+    digest.allItems.length > 0 ? renderSourceIndex(digest.allItems) : "";
 
   // Footer stats
-  const totalSources = digest.sourceStats.twitterCount + digest.sourceStats.gmailCount;
+  const totalSources =
+    digest.sourceStats.twitterCount + digest.sourceStats.gmailCount;
   const generatedTime = digest.generatedAt.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -236,25 +229,18 @@ export function renderDigestHtml(digest: Digest): string {
       </p>
     </div>
 
-    <!-- CAIO Brief -->
+    <!-- CAIO Strategic Brief -->
     ${caioBriefHtml}
 
-    <!-- Executive Summary -->
-    ${executiveSummaryHtml}
+    ${caioBriefHtml ? renderSectionDivider() : ""}
 
-    ${renderSectionDivider()}
-
-    <!-- Featured (from bookmarks) -->
-    ${featuredHtml}
-
-    <!-- AI Community Pulse (from themes) -->
+    <!-- Synthesized Themes -->
     ${themesHtml}
 
-    <!-- Top Stories -->
-    ${topStoriesHtml}
+    ${themesHtml ? renderSectionDivider() : ""}
 
-    <!-- Topic Sections (newsletters) -->
-    ${sectionsHtml}
+    <!-- Source Index -->
+    ${sourceIndexHtml}
 
     <!-- Footer -->
     <div style="border-top: 1px solid ${COLORS.divider}; padding-top: 24px; margin-top: 48px;">
@@ -271,7 +257,11 @@ export function renderDigestHtml(digest: Digest): string {
 
 export function renderDigestSubject(digest: Digest): string {
   const dateStr = formatShortDate(digest.generatedAt);
-  const headline = digest.executiveBrief?.headline || digest.topStories[0]?.title || "Your daily briefing";
-  const truncatedHeadline = headline.length > 50 ? headline.slice(0, 50) + "..." : headline;
+  const headline =
+    digest.executiveBrief?.headline ||
+    digest.themes[0]?.theme ||
+    "Your daily briefing";
+  const truncatedHeadline =
+    headline.length > 50 ? headline.slice(0, 50) + "..." : headline;
   return `Intelligence Brief · ${dateStr} — ${truncatedHeadline}`;
 }

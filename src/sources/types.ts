@@ -7,6 +7,10 @@ export interface SourceItem {
   author?: string;
   publishedAt: Date;
   extractedAt: Date;
+  twitterSourceType?: "bookmark" | "account";
+  sourceAccount?: string;
+  parentNewsletterId?: string;
+  newsletterName?: string;
 }
 
 export interface TwitterBookmark {
@@ -42,6 +46,13 @@ export interface ExtractedArticle {
   hasTranscript?: boolean; // For YouTube videos: whether transcript was extracted
 }
 
+export interface NewsletterStory {
+  title: string;
+  content: string;
+  urls: string[];
+  isSponsored: boolean;
+}
+
 export interface SummarizedItem extends SourceItem {
   summary: string;
   keyTakeaways: string[];
@@ -49,17 +60,31 @@ export interface SummarizedItem extends SourceItem {
   topics: string[];
 }
 
-export interface DigestSection {
-  topic: string;
-  items: SummarizedItem[];
+export interface SynthesizedTheme {
+  theme: string;
+  narrative: string;
+  keyInsights: string[];
+  sources: Array<{
+    title: string;
+    author: string;
+    sourceType: string;
+    snippet: string;
+    url?: string;
+  }>;
+}
+
+export interface ExecutiveBrief {
+  headline: string;
+  strategicInsights: string[];
+  watchList: string[];
 }
 
 export interface Digest {
   id: string;
   generatedAt: Date;
-  executiveSummary: string;
-  topStories: SummarizedItem[];
-  sections: DigestSection[];
+  executiveBrief?: ExecutiveBrief;
+  themes: SynthesizedTheme[];
+  allItems: SummarizedItem[];
   sourceStats: {
     twitterCount: number;
     gmailCount: number;

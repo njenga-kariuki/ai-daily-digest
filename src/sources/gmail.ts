@@ -14,17 +14,26 @@ const logger = createLogger("Gmail");
 const CREDENTIALS_PATH = join(__dirname, "../../credentials.json");
 const TOKEN_PATH = join(__dirname, "../../token.json");
 
+function cleanUrl(url: string): string {
+  // Strip trailing punctuation that's commonly appended in text
+  return url.replace(/[)}\],;:!?.—–]+$/, '');
+}
+
 function extractUrls(text: string): string[] {
   const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
   const matches = text.match(urlRegex) || [];
-  // Filter out common tracking/unsubscribe URLs
-  return matches.filter(
-    (url) =>
-      !url.includes("unsubscribe") &&
-      !url.includes("tracking") &&
-      !url.includes("click.") &&
-      !url.includes("list-manage.com")
-  );
+  // Clean URLs and filter out tracking/unsubscribe/image URLs
+  return matches
+    .map(cleanUrl)
+    .filter(
+      (url) =>
+        !url.includes("unsubscribe") &&
+        !url.includes("tracking") &&
+        !url.includes("click.") &&
+        !url.includes("list-manage.com") &&
+        !url.match(/\.(png|jpg|jpeg|gif|webp|svg)(\?|$)/i) &&
+        !url.includes("/cdn-cgi/image/")
+    );
 }
 
 function decodeBase64Url(data: string): string {

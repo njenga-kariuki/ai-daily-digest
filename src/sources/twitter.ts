@@ -21,13 +21,18 @@ interface TwitterTokens {
   clientId: string;
 }
 
+function cleanUrl(url: string): string {
+  // Strip trailing punctuation that's commonly appended in text
+  return url.replace(/[)}\],;:!?.—–]+$/, '');
+}
+
 function extractUrls(text: string): string[] {
   const urlRegex = /https?:\/\/[^\s]+/g;
   const matches = text.match(urlRegex) || [];
-  // Filter out Twitter's own URLs
-  return matches.filter(
-    (url) => !url.includes("twitter.com") && !url.includes("x.com")
-  );
+  // Clean URLs and filter out Twitter's own URLs
+  return matches
+    .map(cleanUrl)
+    .filter((url) => !url.includes("twitter.com") && !url.includes("x.com"));
 }
 
 function loadTokens(): TwitterTokens | null {

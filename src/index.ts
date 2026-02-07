@@ -5,7 +5,12 @@ import { sourcesConfig } from "./config/settings.js";
 import { fetchNewsletters } from "./sources/gmail.js";
 import { fetchTwitterContent } from "./sources/twitter.js";
 import { extractArticles } from "./sources/article-extractor.js";
-import { summarizeItems } from "./processing/summarizer.js";
+import {
+  summarizeItems,
+  decomposeNewsletter,
+  synthesizeDigest,
+  generateExecutiveBrief,
+} from "./processing/summarizer.js";
 import { buildDigest } from "./processing/digest-builder.js";
 import {
   filterUnprocessed,
@@ -30,30 +35,21 @@ function twitterToSourceItem(
     author: bookmark.authorName,
     publishedAt: bookmark.createdAt,
     extractedAt: new Date(),
+    twitterSourceType: bookmark.sourceType,
+    sourceAccount: bookmark.sourceAccount,
   };
 }
 
-function gmailToSourceItem(
-  newsletter: GmailNewsletter,
-  articleContent?: string
-): SourceItem {
-  return {
-    id: `gmail-${newsletter.id}`,
-    source: "gmail",
-    title: newsletter.subject,
-    content: articleContent || newsletter.body,
-    url: newsletter.urls[0],
-    author: newsletter.from,
-    publishedAt: newsletter.receivedAt,
-    extractedAt: new Date(),
-  };
+function extractNewsletterName(from: string): string {
+  // Extract name from "Name <email>" or just return the from string
+  const match = from.match(/^"?([^"<]+)"?\s*</);
+  return match ? match[1].trim() : from;
 }
 
 async function runDigest(): Promise<void> {
   logger.info("Starting digest generation");
   const errors: string[] = [];
 
-  // Stats tracking
   const stats = {
     twitterCount: 0,
     gmailCount: 0,
@@ -65,7 +61,8 @@ async function runDigest(): Promise<void> {
   };
 
   // Fetch sources in parallel
-  let allTwitterContent: TwitterBookmark[] = [];
+  let bookmarks: TwitterBookmark[] = [];
+  let accountTweets: TwitterBookmark[] = [];
   let newsletters: GmailNewsletter[] = [];
 
   const [twitterResult, newslettersResult] = await Promise.allSettled([
@@ -74,11 +71,10 @@ async function runDigest(): Promise<void> {
   ]);
 
   if (twitterResult.status === "fulfilled") {
-    // Merge bookmarks and account tweets, then deduplicate
-    const { bookmarks, accountTweets, threadsExpanded } = twitterResult.value;
-    const combined = [...bookmarks, ...accountTweets];
-    allTwitterContent = filterUnprocessed("twitter", combined);
-    stats.twitterCount = allTwitterContent.length;
+    const { bookmarks: rawBookmarks, accountTweets: rawAccountTweets, threadsExpanded } = twitterResult.value;
+    bookmarks = filterUnprocessed("twitter", rawBookmarks);
+    accountTweets = filterUnprocessed("twitter", rawAccountTweets);
+    stats.twitterCount = bookmarks.length + accountTweets.length;
     stats.threadsExpanded = threadsExpanded;
     logger.info(
       `Twitter sources: ${bookmarks.length} bookmarks, ${accountTweets.length} from monitored accounts`
@@ -96,47 +92,97 @@ async function runDigest(): Promise<void> {
     errors.push("Gmail: " + (newslettersResult.reason?.message || "fetch failed"));
   }
 
+  const allTwitterContent = [...bookmarks, ...accountTweets];
   if (allTwitterContent.length === 0 && newsletters.length === 0) {
     logger.warn("No new content to process");
     return;
   }
 
-  // Collect all URLs for article extraction
-  const allUrls = [
-    ...allTwitterContent.flatMap((b) => b.urls),
-    ...newsletters.flatMap((n) => n.urls),
-  ];
-
-  // Extract article content
-  const extractionResult = await extractArticles(allUrls);
+  // Phase 1: Extract articles for Twitter bookmarks only
+  const twitterUrls = allTwitterContent.flatMap((b) => b.urls);
+  const extractionResult = await extractArticles(twitterUrls);
   const extractedArticles = extractionResult.articles;
   stats.articlesExtracted = extractionResult.stats.articlesExtracted;
   stats.failedExtractions = extractionResult.stats.failedExtractions;
   stats.youtubeWithTranscript = extractionResult.stats.youtubeWithTranscript;
   stats.youtubeMetadataOnly = extractionResult.stats.youtubeMetadataOnly;
 
-  // Convert to SourceItems
-  const sourceItems: SourceItem[] = [];
+  // Convert Twitter content to SourceItems
+  const bookmarkItems: SourceItem[] = [];
+  const accountTweetItems: SourceItem[] = [];
 
-  for (const tweet of allTwitterContent) {
+  for (const tweet of bookmarks) {
     const articleUrl = tweet.urls[0];
     const article = articleUrl ? extractedArticles.get(articleUrl) : undefined;
-    sourceItems.push(twitterToSourceItem(tweet, article?.content));
+    bookmarkItems.push(twitterToSourceItem(tweet, article?.content));
   }
 
-  for (const newsletter of newsletters) {
-    const articleUrl = newsletter.urls[0];
+  for (const tweet of accountTweets) {
+    const articleUrl = tweet.urls[0];
     const article = articleUrl ? extractedArticles.get(articleUrl) : undefined;
-    sourceItems.push(gmailToSourceItem(newsletter, article?.content));
+    accountTweetItems.push(twitterToSourceItem(tweet, article?.content));
   }
 
-  logger.info(`Processing ${sourceItems.length} source items`);
+  // Phase 2: Decompose newsletters into individual stories
+  const newsletterStoryItems: SourceItem[] = [];
+  for (const newsletter of newsletters) {
+    const stories = await decomposeNewsletter(newsletter);
+    const nonSponsored = stories.filter((s) => !s.isSponsored);
 
-  // Summarize with Claude
-  const summarizedItems = await summarizeItems(sourceItems);
+    for (let i = 0; i < nonSponsored.length; i++) {
+      const story = nonSponsored[i];
+      newsletterStoryItems.push({
+        id: `gmail-${newsletter.id}-${i}`,
+        source: "gmail",
+        title: story.title,
+        content: story.content,
+        url: story.urls[0],
+        author: newsletter.from,
+        publishedAt: newsletter.receivedAt,
+        extractedAt: new Date(),
+        parentNewsletterId: newsletter.id,
+        newsletterName: extractNewsletterName(newsletter.from),
+      });
+    }
+  }
 
-  // Build digest
-  const digest = await buildDigest(summarizedItems, stats, errors);
+  // Phase 3: Extract articles from story-level URLs to enrich content
+  const storyUrls = newsletterStoryItems.flatMap((s) =>
+    s.url ? [s.url] : []
+  );
+  if (storyUrls.length > 0) {
+    const storyExtractionResult = await extractArticles(storyUrls);
+    stats.articlesExtracted += storyExtractionResult.stats.articlesExtracted;
+    stats.failedExtractions += storyExtractionResult.stats.failedExtractions;
+
+    for (const item of newsletterStoryItems) {
+      if (item.url) {
+        const article = storyExtractionResult.articles.get(item.url);
+        if (article?.content) {
+          item.content +=
+            "\n\n--- Source article content ---\n\n" + article.content;
+        }
+      }
+    }
+  }
+
+  logger.info(
+    `Processing ${bookmarkItems.length} bookmarks, ${accountTweetItems.length} account tweets, ${newsletterStoryItems.length} newsletter stories`
+  );
+
+  // Phase 4: Summarize all individual items
+  const summarizedBookmarks = await summarizeItems(bookmarkItems);
+  const summarizedNewsletterStories = await summarizeItems(newsletterStoryItems);
+  const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories];
+
+  // Phase 5: Cross-source narrative synthesis
+  const themes = await synthesizeDigest(allSummarized, accountTweetItems);
+
+  // Phase 6: CAIO executive brief (uses themes + all items)
+  const executiveBrief = await generateExecutiveBrief(allSummarized, themes);
+
+  // Phase 7: Build digest
+  const digest = buildDigest(allSummarized, themes, executiveBrief, stats, errors);
 
   // Send email
   const emailSent = await sendDigestEmail(digest);
@@ -196,7 +242,6 @@ async function main(): Promise<void> {
   if (args.includes("--daemon")) {
     logger.info("Starting in daemon mode");
     startScheduler();
-    // Keep process alive
     process.on("SIGINT", () => {
       logger.info("Shutting down");
       process.exit(0);
