@@ -144,7 +144,12 @@ function renderSourceIndex(items: SummarizedItem[]): string {
   ): string {
     if (groupItems.length === 0) return "";
 
-    const itemsHtml = groupItems
+    // Sort by AI relevance score descending (most relevant first)
+    const sorted = [...groupItems].sort(
+      (a, b) => (b.aiRelevanceScore ?? 0) - (a.aiRelevanceScore ?? 0)
+    );
+
+    const itemsHtml = sorted
       .map((item) => {
         const title = item.url
           ? `<a href="${escapeHtml(item.url)}" style="color: ${COLORS.text}; text-decoration: underline; font-weight: 500;">${escapeHtml(item.title)}</a>`
@@ -246,6 +251,14 @@ export function renderDigestHtml(digest: Digest): string {
     <div style="border-top: 1px solid ${COLORS.divider}; padding-top: 24px; margin-top: 48px;">
       <p style="margin: 0; font-size: 12px; color: ${COLORS.tertiary};">
         ${totalSources} sources processed · Generated ${generatedTime}
+      </p>
+      <p style="margin: 4px 0 0 0; font-size: 11px; color: ${COLORS.tertiary};">
+        ${[
+          `${digest.sourceStats.articlesExtracted} articles extracted`,
+          digest.sourceStats.failedExtractions ? `${digest.sourceStats.failedExtractions} failed` : '',
+          digest.sourceStats.threadsExpanded ? `${digest.sourceStats.threadsExpanded} threads expanded` : '',
+          digest.sourceStats.youtubeWithTranscript ? `${digest.sourceStats.youtubeWithTranscript} YouTube transcripts` : '',
+        ].filter(Boolean).join(' · ')}
       </p>
     </div>
 

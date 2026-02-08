@@ -173,7 +173,10 @@ async function runDigest(): Promise<void> {
   // Phase 4: Summarize all individual items
   const summarizedBookmarks = await summarizeItems(bookmarkItems);
   const summarizedNewsletterStories = await summarizeItems(newsletterStoryItems);
-  const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories];
+  const summarizedAccountTweets = accountTweetItems.length > 0
+    ? await summarizeItems(accountTweetItems)
+    : [];
+  const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories, ...summarizedAccountTweets];
 
   // Phase 5: Cross-source narrative synthesis
   const themes = await synthesizeDigest(allSummarized, accountTweetItems);
@@ -231,6 +234,15 @@ function startScheduler(): void {
 }
 
 async function main(): Promise<void> {
+  // Dead-man's switch: kill process after 15 minutes no matter what.
+  // Prevents zombie processes from blocking future scheduled runs.
+  const PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
+  const processTimer = setTimeout(() => {
+    logger.error(`Process timeout (${PROCESS_TIMEOUT_MS / 60000}min) — killing to unblock future runs`);
+    process.exit(1);
+  }, PROCESS_TIMEOUT_MS);
+  processTimer.unref(); // Don't keep process alive just for the timer
+
   const args = process.argv.slice(2);
 
   if (args.includes("--run-now")) {

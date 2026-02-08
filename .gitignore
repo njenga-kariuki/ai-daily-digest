@@ -11,3 +11,6 @@ twitter-token.json
 # Data files (generated)
 data/*.json
 data/unsent/
+
+# Personal CAIO context (use .example.md as template)
+config/caio-context/*.md

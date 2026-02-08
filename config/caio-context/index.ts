@@ -8,7 +8,7 @@ const FALLBACK_CONTEXT = `AI leader, leading enterprise AI transformation.
 Key areas: M-Pesa mobile payments platform, financial inclusion across Africa,
 fraud detection, customer experience, and operational efficiency.
 
-Add your actual job description to src/config/caio-context/job-description.md
+Add your actual job description to config/caio-context/job-description.md
 for more specific, grounded strategic insights.`;
 
 export function getCAIOContextString(): string {

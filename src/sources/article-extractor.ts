@@ -61,6 +61,7 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const response = await fetch(url, {
+        signal: AbortSignal.timeout(15000),
         headers: {
           "User-Agent": getRandomUserAgent(),
           Accept:
@@ -126,7 +127,10 @@ async function extractWithExtractus(
   url: string
 ): Promise<ExtractedArticle | null> {
   try {
-    const article = await extract(url);
+    const article = await Promise.race([
+      extract(url),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+    ]);
 
     if (!article || !article.content) {
       return null;
@@ -159,7 +163,7 @@ async function extractWithExtractus(
 async function resolveUrl(url: string): Promise<string> {
   if (!url.includes('t.co/')) return url;
   try {
-    const response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    const response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(10000) });
     return response.url;
   } catch {
     return url;

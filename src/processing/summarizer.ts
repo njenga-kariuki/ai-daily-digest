@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 import { createLogger } from "../utils/logger.js";
 import { settings, sourcesConfig } from "../config/settings.js";
-import { getCAIOContextString } from "../config/caio-context/index.js";
+import { getCAIOContextString } from "../../config/caio-context/index.js";
 import type {
   SourceItem,
   SummarizedItem,
@@ -152,6 +153,51 @@ Rules:
 - If the newsletter is a single-topic deep dive, return one story
 - Exclude boilerplate (unsubscribe, footer, masthead)`;
 
+const DECOMPOSE_PROMPT_SHORT = `You are parsing an email newsletter into its individual stories/segments.
+
+Newsletter: {subject}
+From: {from}
+Content:
+---
+{body}
+---
+
+Extract each discrete story/topic as a separate item. Return at most 8 stories.
+For content, use 2-3 sentences per story instead of full text.
+
+For each:
+- title: A descriptive headline for this story
+- content: 2-3 sentence summary of the story segment
+- urls: Any URLs/links within this story
+- isSponsored: true if this is a sponsored/ad section
+
+Respond in JSON format only: { "stories": [...] }
+
+Rules:
+- Split on topic boundaries, not paragraphs
+- Keep content brief — 2-3 sentences max
+- Capture all URLs within each story
+- Mark sponsored/ad sections clearly
+- If the newsletter is a single-topic deep dive, return one story
+- Exclude boilerplate (unsubscribe, footer, masthead)`;
+
+function parseDecomposedJson(text: string): NewsletterStory[] {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("No JSON found in response");
+  }
+
+  const repairedJson = jsonrepair(jsonMatch[0]);
+  const result = JSON.parse(repairedJson);
+  const stories: NewsletterStory[] = result.stories || [];
+
+  if (stories.length === 0) {
+    throw new Error("Decomposition returned zero stories");
+  }
+
+  return stories;
+}
+
 export async function decomposeNewsletter(
   newsletter: GmailNewsletter
 ): Promise<NewsletterStory[]> {
@@ -162,39 +208,66 @@ export async function decomposeNewsletter(
   try {
     const response = await client.messages.create({
       model: settings.claude.model,
-      max_tokens: settings.claude.maxTokens,
+      max_tokens: 8000,
       messages: [{ role: "user", content: prompt }],
     });
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON found in response");
-    }
-
-    const result = JSON.parse(jsonMatch[0]);
-    const stories: NewsletterStory[] = result.stories || [];
+    const stories = parseDecomposedJson(text);
 
     logger.info(
       `Decomposed "${newsletter.subject}" into ${stories.length} stories`
     );
     return stories;
   } catch (error) {
-    logger.error(
-      `Failed to decompose newsletter: ${newsletter.subject}`,
+    logger.warn(
+      `First decomposition attempt failed for "${newsletter.subject}", retrying with constrained prompt`,
       error
     );
-    // Fallback: return the whole newsletter as a single story
-    return [
-      {
-        title: newsletter.subject,
-        content: newsletter.body,
-        urls: newsletter.urls,
-        isSponsored: false,
-      },
-    ];
+
+    // Retry with constrained prompt (shorter output)
+    try {
+      const retryPrompt = DECOMPOSE_PROMPT_SHORT.replace(
+        "{subject}",
+        newsletter.subject
+      )
+        .replace("{from}", newsletter.from)
+        .replace("{body}", newsletter.body.slice(0, 10000));
+
+      const retryResponse = await client.messages.create({
+        model: settings.claude.model,
+        max_tokens: 8000,
+        messages: [{ role: "user", content: retryPrompt }],
+      });
+
+      const retryText =
+        retryResponse.content[0].type === "text"
+          ? retryResponse.content[0].text
+          : "";
+
+      const stories = parseDecomposedJson(retryText);
+
+      logger.info(
+        `Decomposed "${newsletter.subject}" into ${stories.length} stories (retry succeeded)`
+      );
+      return stories;
+    } catch (retryError) {
+      logger.error(
+        `Failed to decompose newsletter after retry: ${newsletter.subject}`,
+        retryError
+      );
+      // Fallback: return the whole newsletter as a single story
+      return [
+        {
+          title: newsletter.subject,
+          content: newsletter.body,
+          urls: newsletter.urls,
+          isSponsored: false,
+        },
+      ];
+    }
   }
 }
 
