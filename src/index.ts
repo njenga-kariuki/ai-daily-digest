@@ -236,7 +236,7 @@ function startScheduler(): void {
 async function main(): Promise<void> {
   // Dead-man's switch: kill process after 15 minutes no matter what.
   // Prevents zombie processes from blocking future scheduled runs.
-  const PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
+  const PROCESS_TIMEOUT_MS = 25 * 60 * 1000;
   const processTimer = setTimeout(() => {
     logger.error(`Process timeout (${PROCESS_TIMEOUT_MS / 60000}min) — killing to unblock future runs`);
     process.exit(1);
