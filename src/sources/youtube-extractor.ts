@@ -64,7 +64,9 @@ async function fetchVideoMetadata(
 ): Promise<VideoMetadata | null> {
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-    const response = await fetch(oembedUrl);
+    const response = await fetch(oembedUrl, {
+      signal: AbortSignal.timeout(5000),
+    });
 
     if (!response.ok) {
       return null;
@@ -83,10 +85,15 @@ async function fetchTranscriptWithRetry(
 ): Promise<TranscriptSegment[] | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const segments = await fetchTranscript(videoId, {
-        userAgent: getRandomUserAgent(),
-        lang: "en",
-      });
+      const segments = await Promise.race([
+        fetchTranscript(videoId, {
+          userAgent: getRandomUserAgent(),
+          lang: "en",
+        }),
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), 10_000)
+        ),
+      ]);
 
       if (segments && segments.length > 0) {
         return segments;

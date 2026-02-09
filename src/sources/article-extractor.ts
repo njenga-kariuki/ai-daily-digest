@@ -170,7 +170,9 @@ async function resolveUrl(url: string): Promise<string> {
   }
 }
 
-export async function extractArticle(
+const EXTRACTION_TIMEOUT_MS = 60_000;
+
+async function extractArticleInner(
   url: string
 ): Promise<ExtractedArticle | null> {
   // Resolve t.co shortened URLs first
@@ -225,6 +227,20 @@ export async function extractArticle(
 
   logger.debug(`All extraction methods failed for: ${resolvedUrl}`);
   return null;
+}
+
+export async function extractArticle(
+  url: string
+): Promise<ExtractedArticle | null> {
+  return Promise.race([
+    extractArticleInner(url),
+    new Promise<null>((resolve) =>
+      setTimeout(() => {
+        logger.warn(`Extraction timeout (${EXTRACTION_TIMEOUT_MS / 1000}s) for: ${url}`);
+        resolve(null);
+      }, EXTRACTION_TIMEOUT_MS)
+    ),
+  ]);
 }
 
 export interface ExtractionStats {

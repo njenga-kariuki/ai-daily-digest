@@ -16,6 +16,8 @@ const logger = createLogger("Summarizer");
 
 const client = new Anthropic();
 
+const API_TIMEOUT_MS = 90_000;
+
 // --- Individual Item Summarization ---
 
 interface SummaryResult {
@@ -61,11 +63,14 @@ export async function summarizeItem(
     .replace("{content}", item.content.slice(0, 8000));
 
   try {
-    const response = await client.messages.create({
-      model: settings.claude.model,
-      max_tokens: settings.claude.maxTokens,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: settings.claude.model,
+        max_tokens: settings.claude.maxTokens,
+        messages: [{ role: "user", content: prompt }],
+      },
+      { timeout: API_TIMEOUT_MS },
+    );
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
@@ -206,11 +211,14 @@ export async function decomposeNewsletter(
     .replace("{body}", newsletter.body.slice(0, 15000));
 
   try {
-    const response = await client.messages.create({
-      model: settings.claude.model,
-      max_tokens: 8000,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: settings.claude.model,
+        max_tokens: 8000,
+        messages: [{ role: "user", content: prompt }],
+      },
+      { timeout: API_TIMEOUT_MS },
+    );
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
@@ -236,11 +244,14 @@ export async function decomposeNewsletter(
         .replace("{from}", newsletter.from)
         .replace("{body}", newsletter.body.slice(0, 10000));
 
-      const retryResponse = await client.messages.create({
-        model: settings.claude.model,
-        max_tokens: 8000,
-        messages: [{ role: "user", content: retryPrompt }],
-      });
+      const retryResponse = await client.messages.create(
+        {
+          model: settings.claude.model,
+          max_tokens: 8000,
+          messages: [{ role: "user", content: retryPrompt }],
+        },
+        { timeout: API_TIMEOUT_MS },
+      );
 
       const retryText =
         retryResponse.content[0].type === "text"
@@ -366,11 +377,14 @@ export async function synthesizeDigest(
   );
 
   try {
-    const response = await client.messages.create({
-      model: settings.claude.model,
-      max_tokens: 8000,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: settings.claude.model,
+        max_tokens: 8000,
+        messages: [{ role: "user", content: prompt }],
+      },
+      { timeout: API_TIMEOUT_MS },
+    );
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
@@ -479,11 +493,14 @@ export async function generateExecutiveBrief(
     .replace("{items}", itemsText);
 
   try {
-    const response = await client.messages.create({
-      model: settings.claude.model,
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: settings.claude.model,
+        max_tokens: 2000,
+        messages: [{ role: "user", content: prompt }],
+      },
+      { timeout: API_TIMEOUT_MS },
+    );
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";

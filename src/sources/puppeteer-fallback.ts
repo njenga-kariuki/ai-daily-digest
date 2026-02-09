@@ -36,16 +36,38 @@ export function hasCachedResult(url: string): boolean {
   return renderCache.has(url);
 }
 
-export async function extractWithPuppeteer(
+const PUPPETEER_TIMEOUT_MS = 30_000;
+const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
+
+async function forceKillBrowser(browser: any): Promise<void> {
+  try {
+    const browserProcess = browser.process();
+    if (browserProcess) {
+      browserProcess.kill("SIGKILL");
+    }
+  } catch {
+    // Ignore — best effort
+  }
+}
+
+async function closeBrowserSafely(browser: any): Promise<void> {
+  try {
+    await Promise.race([
+      browser.close(),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("browser.close() timeout")), BROWSER_CLOSE_TIMEOUT_MS)
+      ),
+    ]);
+  } catch {
+    // browser.close() hung or failed — force kill the process
+    logger.debug("browser.close() timed out — force killing browser process");
+    await forceKillBrowser(browser);
+  }
+}
+
+async function extractWithPuppeteerInner(
   url: string
 ): Promise<ExtractedArticle | null> {
-  // Check cache first
-  if (renderCache.has(url)) {
-    return renderCache.get(url) || null;
-  }
-
-  logger.debug(`Puppeteer fallback for: ${url}`);
-
   let browser = null;
 
   try {
@@ -134,7 +156,7 @@ export async function extractWithPuppeteer(
       return { title, content, author };
     });
 
-    await browser.close();
+    await closeBrowserSafely(browser);
     browser = null;
 
     // Clean up content
@@ -164,13 +186,31 @@ export async function extractWithPuppeteer(
     return null;
   } finally {
     if (browser) {
-      try {
-        await browser.close();
-      } catch {
-        // Ignore close errors
-      }
+      await closeBrowserSafely(browser);
     }
   }
+}
+
+export async function extractWithPuppeteer(
+  url: string
+): Promise<ExtractedArticle | null> {
+  // Check cache first
+  if (renderCache.has(url)) {
+    return renderCache.get(url) || null;
+  }
+
+  logger.debug(`Puppeteer fallback for: ${url}`);
+
+  return Promise.race([
+    extractWithPuppeteerInner(url),
+    new Promise<null>((resolve) =>
+      setTimeout(() => {
+        logger.warn(`Puppeteer timeout (${PUPPETEER_TIMEOUT_MS / 1000}s) for: ${url}`);
+        renderCache.set(url, null);
+        resolve(null);
+      }, PUPPETEER_TIMEOUT_MS)
+    ),
+  ]);
 }
 
 export function clearPuppeteerCache(): void {

@@ -234,16 +234,31 @@ function startScheduler(): void {
 }
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const isDaemon = args.includes("--daemon");
+
   // Dead-man's switch: kill process after 15 minutes no matter what.
   // Prevents zombie processes from blocking future scheduled runs.
-  const PROCESS_TIMEOUT_MS = 25 * 60 * 1000;
-  const processTimer = setTimeout(() => {
-    logger.error(`Process timeout (${PROCESS_TIMEOUT_MS / 60000}min) — killing to unblock future runs`);
-    process.exit(1);
-  }, PROCESS_TIMEOUT_MS);
-  processTimer.unref(); // Don't keep process alive just for the timer
+  // Only active for non-daemon mode (--run-now or default single run).
+  if (!isDaemon) {
+    const PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
+    const processTimer = setTimeout(() => {
+      logger.error(`Process timeout (${PROCESS_TIMEOUT_MS / 60000}min) — killing to unblock future runs`);
+      process.exit(1);
+      // Fallback: if process.exit doesn't terminate (e.g. Puppeteer event handlers),
+      // force-kill after 3 seconds
+      setTimeout(() => {
+        process.kill(process.pid, "SIGKILL");
+      }, 3000).unref();
+    }, PROCESS_TIMEOUT_MS);
+    // DO NOT unref — the timer must fire even if the event loop is dominated by I/O
+  }
 
-  const args = process.argv.slice(2);
+  // Handle SIGTERM gracefully (sent by launchd before SIGKILL)
+  process.on("SIGTERM", () => {
+    logger.warn("Received SIGTERM — shutting down");
+    process.exit(1);
+  });
 
   if (args.includes("--run-now")) {
     logger.info("Running digest immediately (--run-now)");
@@ -251,7 +266,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (args.includes("--daemon")) {
+  if (isDaemon) {
     logger.info("Starting in daemon mode");
     startScheduler();
     process.on("SIGINT", () => {
