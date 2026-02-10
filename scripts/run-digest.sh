@@ -1,38 +1,67 @@
 #!/bin/bash
-# Wrapper script for AI Daily Digest
-# Called by launchd — provides self-healing via stale-process cleanup and hard watchdog timeout.
+# Wrapper script for AI Daily Digest.
+# Called by launchd; adds stale-process cleanup, hard watchdog timeout, and bounded retries.
 
 set -euo pipefail
 
-# Kill any stale digest processes from previous runs
-pkill -f "tsx src/index.ts" 2>/dev/null && sleep 2 || true
+REPO_DIR="/path/to/local-project"
+NODE_BIN="/path/to/local-project"
+MAX_ATTEMPTS=3
+RETRY_DELAY_SECONDS=180
+WATCHDOG_SECONDS=2100 # 35 minutes
 
-# Kill orphaned Chromium/Chrome from Puppeteer
-pkill -f "Chromium.*--headless" 2>/dev/null || true
-pkill -f "chrome.*--headless" 2>/dev/null || true
+cleanup_stale_processes() {
+  # Kill any stale digest processes from previous runs.
+  pkill -f "tsx src/index.ts" 2>/dev/null && sleep 2 || true
 
-# Run digest with a hard 20-minute wall-clock timeout
-cd /path/to/local-project
+  # Kill orphaned Chromium/Chrome from Puppeteer.
+  pkill -f "Chromium.*--headless" 2>/dev/null || true
+  pkill -f "chrome.*--headless" 2>/dev/null || true
+}
 
-/path/to/local-project tsx src/index.ts --run-now &
-MAIN_PID=$!
+run_attempt() {
+  "$NODE_BIN" tsx src/index.ts --run-now &
+  MAIN_PID=$!
 
-# Watchdog: SIGKILL after 20 minutes (1200 seconds)
-(
-  sleep 1200
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Watchdog: 20-minute timeout reached — killing digest (PID $MAIN_PID)"
-  kill -9 $MAIN_PID 2>/dev/null
-  pkill -9 -f "Chromium.*--headless" 2>/dev/null || true
-  pkill -9 -f "chrome.*--headless" 2>/dev/null || true
-) &
-WATCHDOG_PID=$!
+  (
+    sleep "$WATCHDOG_SECONDS"
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Watchdog: timeout reached, killing digest (PID $MAIN_PID)"
+    kill -9 "$MAIN_PID" 2>/dev/null || true
+    pkill -9 -f "Chromium.*--headless" 2>/dev/null || true
+    pkill -9 -f "chrome.*--headless" 2>/dev/null || true
+  ) &
+  WATCHDOG_PID=$!
 
-# Wait for main process
-wait $MAIN_PID 2>/dev/null
-EXIT_CODE=$?
+  set +e
+  wait "$MAIN_PID" 2>/dev/null
+  EXIT_CODE=$?
+  set -e
 
-# Clean up watchdog
-kill $WATCHDOG_PID 2>/dev/null || true
-wait $WATCHDOG_PID 2>/dev/null || true
+  kill "$WATCHDOG_PID" 2>/dev/null || true
+  wait "$WATCHDOG_PID" 2>/dev/null || true
 
-exit ${EXIT_CODE:-0}
+  return "$EXIT_CODE"
+}
+
+cd "$REPO_DIR"
+
+LAST_EXIT=1
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Digest attempt $attempt/$MAX_ATTEMPTS starting"
+  cleanup_stale_processes
+
+  if run_attempt; then
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Digest attempt $attempt succeeded"
+    exit 0
+  fi
+
+  LAST_EXIT=$?
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Digest attempt $attempt failed with exit code $LAST_EXIT"
+
+  if [[ "$attempt" -lt "$MAX_ATTEMPTS" ]]; then
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Sleeping $RETRY_DELAY_SECONDS seconds before retry"
+    sleep "$RETRY_DELAY_SECONDS"
+  fi
+done
+
+exit "$LAST_EXIT"

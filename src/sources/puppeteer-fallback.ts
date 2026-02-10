@@ -201,16 +201,21 @@ export async function extractWithPuppeteer(
 
   logger.debug(`Puppeteer fallback for: ${url}`);
 
-  return Promise.race([
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const result = await Promise.race([
     extractWithPuppeteerInner(url),
-    new Promise<null>((resolve) =>
-      setTimeout(() => {
+    new Promise<null>((resolve) => {
+      timeoutHandle = setTimeout(() => {
         logger.warn(`Puppeteer timeout (${PUPPETEER_TIMEOUT_MS / 1000}s) for: ${url}`);
         renderCache.set(url, null);
         resolve(null);
-      }, PUPPETEER_TIMEOUT_MS)
-    ),
+      }, PUPPETEER_TIMEOUT_MS);
+    }),
   ]);
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+  }
+  return result;
 }
 
 export function clearPuppeteerCache(): void {

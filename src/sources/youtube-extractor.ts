@@ -85,15 +85,19 @@ async function fetchTranscriptWithRetry(
 ): Promise<TranscriptSegment[] | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       const segments = await Promise.race([
         fetchTranscript(videoId, {
           userAgent: getRandomUserAgent(),
           lang: "en",
         }),
-        new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), 10_000)
-        ),
+        new Promise<null>((resolve) => {
+          timeoutHandle = setTimeout(() => resolve(null), 10_000);
+        }),
       ]);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       if (segments && segments.length > 0) {
         return segments;

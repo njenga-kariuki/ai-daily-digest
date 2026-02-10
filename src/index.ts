@@ -49,6 +49,7 @@ function extractNewsletterName(from: string): string {
 async function runDigest(): Promise<void> {
   logger.info("Starting digest generation");
   const errors: string[] = [];
+  const sourceFetchErrors: string[] = [];
 
   const stats = {
     twitterCount: 0,
@@ -81,7 +82,9 @@ async function runDigest(): Promise<void> {
     );
   } else {
     logger.error("Twitter fetch failed", twitterResult.reason);
-    errors.push("Twitter: " + (twitterResult.reason?.message || "fetch failed"));
+    const errorMessage = "Twitter: " + (twitterResult.reason?.message || "fetch failed");
+    errors.push(errorMessage);
+    sourceFetchErrors.push(errorMessage);
   }
 
   if (newslettersResult.status === "fulfilled") {
@@ -89,7 +92,15 @@ async function runDigest(): Promise<void> {
     stats.gmailCount = newsletters.length;
   } else {
     logger.error("Gmail fetch failed", newslettersResult.reason);
-    errors.push("Gmail: " + (newslettersResult.reason?.message || "fetch failed"));
+    const errorMessage = "Gmail: " + (newslettersResult.reason?.message || "fetch failed");
+    errors.push(errorMessage);
+    sourceFetchErrors.push(errorMessage);
+  }
+
+  if (sourceFetchErrors.length > 0) {
+    throw new Error(
+      `Aborting digest to preserve integrity; required source fetch failed (${sourceFetchErrors.join("; ")})`
+    );
   }
 
   const allTwitterContent = [...bookmarks, ...accountTweets];
@@ -190,7 +201,13 @@ async function runDigest(): Promise<void> {
   // Send email
   const emailSent = await sendDigestEmail(digest);
 
-  // Save digest and mark items as processed
+  if (!emailSent) {
+    throw new Error(
+      "Digest generation completed but email delivery failed. Leaving items unprocessed for retry."
+    );
+  }
+
+  // Only mark as processed after successful delivery.
   saveDigest(digest);
   markAsProcessed(
     "twitter",
@@ -201,11 +218,7 @@ async function runDigest(): Promise<void> {
     newsletters.map((n) => n.id)
   );
 
-  if (emailSent) {
-    logger.info("Digest complete and sent successfully");
-  } else {
-    logger.warn("Digest complete but email failed to send");
-  }
+  logger.info("Digest complete and sent successfully");
 }
 
 function startScheduler(): void {
@@ -237,11 +250,11 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const isDaemon = args.includes("--daemon");
 
-  // Dead-man's switch: kill process after 15 minutes no matter what.
+  // Dead-man's switch: kill process after 30 minutes no matter what.
   // Prevents zombie processes from blocking future scheduled runs.
   // Only active for non-daemon mode (--run-now or default single run).
   if (!isDaemon) {
-    const PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
+    const PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
     const processTimer = setTimeout(() => {
       logger.error(`Process timeout (${PROCESS_TIMEOUT_MS / 60000}min) — killing to unblock future runs`);
       process.exit(1);

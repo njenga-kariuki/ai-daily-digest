@@ -12,8 +12,6 @@ import { extractYouTubeContent, isYouTubeUrl } from "./youtube-extractor.js";
 import {
   extractWithPuppeteer,
   isJsHeavySite,
-  hasCachedResult,
-  getCachedResult,
   clearPuppeteerCache,
 } from "./puppeteer-fallback.js";
 
@@ -127,10 +125,16 @@ async function extractWithExtractus(
   url: string
 ): Promise<ExtractedArticle | null> {
   try {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     const article = await Promise.race([
       extract(url),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+      new Promise<null>((resolve) => {
+        timeoutHandle = setTimeout(() => resolve(null), 15000);
+      }),
     ]);
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
 
     if (!article || !article.content) {
       return null;
@@ -232,15 +236,20 @@ async function extractArticleInner(
 export async function extractArticle(
   url: string
 ): Promise<ExtractedArticle | null> {
-  return Promise.race([
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const result = await Promise.race([
     extractArticleInner(url),
-    new Promise<null>((resolve) =>
-      setTimeout(() => {
+    new Promise<null>((resolve) => {
+      timeoutHandle = setTimeout(() => {
         logger.warn(`Extraction timeout (${EXTRACTION_TIMEOUT_MS / 1000}s) for: ${url}`);
         resolve(null);
-      }, EXTRACTION_TIMEOUT_MS)
-    ),
+      }, EXTRACTION_TIMEOUT_MS);
+    }),
   ]);
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+  }
+  return result;
 }
 
 export interface ExtractionStats {
