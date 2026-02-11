@@ -64,6 +64,10 @@ export interface SynthesizedTheme {
   theme: string;
   narrative: string;
   keyInsights: string[];
+  crossDaySignals?: {
+    confirmedThreads: string[];
+    weakSignals: string[];
+  };
   sources: Array<{
     title: string;
     author: string;
@@ -101,4 +105,69 @@ export interface ProcessedIds {
   twitter: Set<string>;
   gmail: Set<string>;
   articles: Set<string>;
+}
+
+export interface MemoryEvidenceRef {
+  itemId?: string;
+  url?: string;
+  title?: string;
+}
+
+export interface MemoryCard {
+  cardId: string;
+  digestId: string;
+  date: Date;
+  themeLabel: string;
+  summary: string;
+  entities: string[];
+  tags: string[];
+  evidenceRefs: MemoryEvidenceRef[];
+  sourceTypes: string[];
+  importanceScore: number;
+  noveltyScore: number;
+  confidenceScore: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MemoryLink {
+  linkId: string;
+  fromCardId: string;
+  toCardId: string;
+  linkType: "continuation" | "counterpoint" | "duplicate";
+  strength: number;
+  createdAt: Date;
+}
+
+export interface MemoryRunStats {
+  runId: string;
+  runDate: Date;
+  cardsCreated: number;
+  cardsMerged: number;
+  retrievalMs: number;
+  cardsUsed: number;
+  tokenOverheadEstimate: number;
+  notes?: string;
+}
+
+export interface MemoryRetrievalQuery {
+  now: Date;
+  activeWindowDays: number;
+  maxContextCards: number;
+  maxContextTokens: number;
+  topics: string[];
+  entities: string[];
+  titles: string[];
+}
+
+export interface HistoricalContextPack {
+  cards: MemoryCard[];
+  confirmedThreads: string[];
+  weakSignals: string[];
+  stats: {
+    retrievalMs: number;
+    candidates: number;
+    selected: number;
+    tokenEstimate: number;
+  };
 }

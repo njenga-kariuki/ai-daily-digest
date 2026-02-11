@@ -10,6 +10,9 @@ twitter-token.json
 
 # Data files (generated)
 data/*.json
+data/memory.db
+data/memory.db-shm
+data/memory.db-wal
 data/unsent/
 
 # Personal CAIO context (use .example.md as template)

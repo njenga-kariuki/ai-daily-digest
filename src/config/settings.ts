@@ -28,13 +28,48 @@ export interface SourcesConfig {
   };
   processing: {
     focusAreas: string[];
+    memory: {
+      enabled: boolean;
+      activeWindowDays: number;
+      maxContextCards: number;
+      maxContextTokens: number;
+      compaction: {
+        enabled: boolean;
+      };
+    };
   };
 }
 
 function loadSourcesConfig(): SourcesConfig {
   const configPath = join(__dirname, "sources.json");
   const configData = readFileSync(configPath, "utf-8");
-  return JSON.parse(configData) as SourcesConfig;
+  const parsed = JSON.parse(configData) as Partial<SourcesConfig>;
+
+  const memoryDefaults: SourcesConfig["processing"]["memory"] = {
+    enabled: true,
+    activeWindowDays: 60,
+    maxContextCards: 20,
+    maxContextTokens: 2500,
+    compaction: {
+      enabled: true,
+    },
+  };
+
+  return {
+    ...parsed,
+    processing: {
+      focusAreas: parsed.processing?.focusAreas || [],
+      memory: {
+        ...memoryDefaults,
+        ...(parsed.processing?.memory || {}),
+        compaction: {
+          enabled:
+            parsed.processing?.memory?.compaction?.enabled ??
+            memoryDefaults.compaction.enabled,
+        },
+      },
+    },
+  } as SourcesConfig;
 }
 
 export const sourcesConfig = loadSourcesConfig();
@@ -52,6 +87,7 @@ export const settings = {
     dataDir: join(__dirname, "../../data"),
     digestHistory: join(__dirname, "../../data/digest-history.json"),
     processedIds: join(__dirname, "../../data/processed-ids.json"),
+    memoryDb: join(__dirname, "../../data/memory.db"),
   },
   retry: {
     maxAttempts: 3,

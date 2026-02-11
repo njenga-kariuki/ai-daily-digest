@@ -74,6 +74,8 @@ src/
 | `npm run dev -- --run-now` | Run digest immediately |
 | `npm run dev -- --daemon` | Run scheduled (stays alive) |
 | `npm run test-sources` | Verify API connections |
+| `npm run test-memory` | Run memory subsystem tests |
+| `npm run backfill-memory` | Seed memory DB from historical digests |
 | `npm run gmail-auth` | Set up Gmail OAuth |
 
 ## Troubleshooting
@@ -90,7 +92,20 @@ src/
 
 - `data/digest-history.json` - Past 30 digests
 - `data/processed-ids.json` - Deduplication tracking
+- `data/memory.db` - Longitudinal memory cards + links (SQLite + FTS)
 - `data/unsent/` - Failed email sends (manual retry)
+
+## Memory Configuration
+
+Edit `src/config/sources.json` under `processing.memory`:
+
+| Setting | Description |
+|---------|-------------|
+| `enabled` | Enable longitudinal memory retrieval/ingestion |
+| `activeWindowDays` | Hot retrieval window (default: 60 days) |
+| `maxContextCards` | Max memory cards injected into synthesis |
+| `maxContextTokens` | Token budget for historical context |
+| `compaction.enabled` | Enable weekly memory compaction |
 
 ## Extraction Architecture
 

@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { CronJob } from "cron";
 import { createLogger } from "./utils/logger.js";
-import { sourcesConfig } from "./config/settings.js";
+import { settings, sourcesConfig } from "./config/settings.js";
 import { fetchNewsletters } from "./sources/gmail.js";
 import { fetchTwitterContent } from "./sources/twitter.js";
 import { extractArticles } from "./sources/article-extractor.js";
@@ -11,14 +11,23 @@ import {
   synthesizeDigest,
   generateExecutiveBrief,
 } from "./processing/summarizer.js";
+import { buildMemoryArtifacts } from "./processing/memory-builder.js";
+import { NoopMemoryProvider, type MemoryProvider } from "./processing/memory-provider.js";
+import { buildMemoryRetrievalQuery } from "./processing/memory-retriever.js";
 import { buildDigest } from "./processing/digest-builder.js";
+import { SqliteMemoryProvider } from "./storage/memory-store.js";
 import {
   filterUnprocessed,
   markAsProcessed,
   saveDigest,
 } from "./storage/digest-store.js";
 import { sendDigestEmail } from "./output/gmail-sender.js";
-import type { SourceItem, TwitterBookmark, GmailNewsletter } from "./sources/types.js";
+import type {
+  SourceItem,
+  TwitterBookmark,
+  GmailNewsletter,
+  HistoricalContextPack,
+} from "./sources/types.js";
 
 const logger = createLogger("Main");
 
@@ -46,10 +55,26 @@ function extractNewsletterName(from: string): string {
   return match ? match[1].trim() : from;
 }
 
+async function initMemoryProvider(): Promise<MemoryProvider> {
+  if (!sourcesConfig.processing.memory.enabled) {
+    return new NoopMemoryProvider("memory disabled by config");
+  }
+
+  const provider = new SqliteMemoryProvider(settings.paths.memoryDb);
+  try {
+    await provider.init();
+    return provider;
+  } catch (error) {
+    logger.warn("Memory provider init failed; continuing without memory", error);
+    return new NoopMemoryProvider("memory init failed");
+  }
+}
+
 async function runDigest(): Promise<void> {
   logger.info("Starting digest generation");
   const errors: string[] = [];
   const sourceFetchErrors: string[] = [];
+  const memoryProvider = await initMemoryProvider();
 
   const stats = {
     twitterCount: 0,
@@ -189,8 +214,28 @@ async function runDigest(): Promise<void> {
     : [];
   const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories, ...summarizedAccountTweets];
 
+  let historicalContext: HistoricalContextPack | undefined;
+  if (sourcesConfig.processing.memory.enabled) {
+    try {
+      const query = buildMemoryRetrievalQuery(
+        allSummarized,
+        sourcesConfig.processing.memory
+      );
+      historicalContext = await memoryProvider.retrieve(query);
+      logger.info(
+        `Historical memory retrieved: ${historicalContext.cards.length} cards, ${historicalContext.stats.tokenEstimate} estimated tokens`
+      );
+    } catch (error) {
+      logger.warn("Historical memory retrieval failed; using today-only context", error);
+    }
+  }
+
   // Phase 5: Cross-source narrative synthesis
-  const themes = await synthesizeDigest(allSummarized, accountTweetItems);
+  const themes = await synthesizeDigest(
+    allSummarized,
+    accountTweetItems,
+    historicalContext
+  );
 
   // Phase 6: CAIO executive brief (uses themes + all items)
   const executiveBrief = await generateExecutiveBrief(allSummarized, themes);
@@ -217,6 +262,33 @@ async function runDigest(): Promise<void> {
     "gmail",
     newsletters.map((n) => n.id)
   );
+
+  if (sourcesConfig.processing.memory.enabled) {
+    try {
+      const artifacts = buildMemoryArtifacts(digest);
+      const runStats = await memoryProvider.ingest(
+        artifacts.cards,
+        artifacts.links,
+        {
+          runDate: new Date(),
+          retrievalMs: historicalContext?.stats.retrievalMs || 0,
+          cardsUsed: historicalContext?.stats.selected || 0,
+          tokenOverheadEstimate: historicalContext?.stats.tokenEstimate || 0,
+          notes: `daily:${digest.id}`,
+        }
+      );
+
+      logger.info(
+        `Memory ingest stats: created=${runStats.cardsCreated}, merged=${runStats.cardsMerged}, cardsUsed=${runStats.cardsUsed}`
+      );
+
+      if (sourcesConfig.processing.memory.compaction.enabled) {
+        await memoryProvider.compact(new Date());
+      }
+    } catch (error) {
+      logger.warn("Memory ingest/compaction failed; digest remains successful", error);
+    }
+  }
 
   logger.info("Digest complete and sent successfully");
 }

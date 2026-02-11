@@ -36,6 +36,15 @@
     "timezone": "America/Los_Angeles"
   },
   "processing": {
+    "memory": {
+      "enabled": true,
+      "activeWindowDays": 60,
+      "maxContextCards": 20,
+      "maxContextTokens": 2500,
+      "compaction": {
+        "enabled": true
+      }
+    },
     "focusAreas": [
       "LLM capabilities, benchmarks, and model releases",
       "AI agent frameworks, tools, and autonomous systems",

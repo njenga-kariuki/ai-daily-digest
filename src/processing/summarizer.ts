@@ -3,6 +3,7 @@ import { jsonrepair } from "jsonrepair";
 import { createLogger } from "../utils/logger.js";
 import { settings, sourcesConfig } from "../config/settings.js";
 import { getCAIOContextString } from "../../config/caio-context/index.js";
+import { formatHistoricalContext } from "./memory-retriever.js";
 import type {
   SourceItem,
   SummarizedItem,
@@ -10,6 +11,7 @@ import type {
   NewsletterStory,
   SynthesizedTheme,
   ExecutiveBrief,
+  HistoricalContextPack,
 } from "../sources/types.js";
 
 const logger = createLogger("Summarizer");
@@ -304,6 +306,11 @@ RAW COMMUNITY SIGNALS (tweets from AI researchers/practitioners):
 {accountTweets}
 ---
 
+HISTORICAL CONTEXT (PAST 60 DAYS + LINKED PRIOR):
+---
+{historicalContext}
+---
+
 Identify the thematic threads that connect multiple sources. Let the material determine
 how many themes there are — a light news day might have 2-3, a dense day might have 8+.
 Don't force groupings and don't artificially cap.
@@ -340,18 +347,24 @@ Rules:
 - When research papers or technical breakthroughs come up, explain WHY they matter,
   not just THAT they exist.
 - Don't artificially separate "technical" from "business" — if a model release has
-  enterprise implications, say so in the same theme.`;
+  enterprise implications, say so in the same theme.
+- Clearly separate:
+  - today-only signals,
+  - cross-day confirmed threads (backed by historical context),
+  - weak/early signals that need monitoring.
+- Do not overstate memory confidence: if historical support is weak, say so explicitly.`;
 
 export async function synthesizeDigest(
   allItems: SummarizedItem[],
-  accountTweets: SourceItem[]
+  accountTweets: SourceItem[],
+  historicalContext?: HistoricalContextPack
 ): Promise<SynthesizedTheme[]> {
   if (allItems.length === 0 && accountTweets.length === 0) {
     return [];
   }
 
   logger.info(
-    `Synthesizing themes from ${allItems.length} items and ${accountTweets.length} account tweets`
+    `Synthesizing themes from ${allItems.length} items, ${accountTweets.length} account tweets, ${historicalContext?.cards.length || 0} memory cards`
   );
 
   const itemsList = allItems
@@ -371,10 +384,11 @@ export async function synthesizeDigest(
           .join("\n\n")
       : "(No community tweets today)";
 
-  const prompt = SYNTHESIS_PROMPT.replace("{items}", itemsList).replace(
-    "{accountTweets}",
-    accountTweetsList
-  );
+  const historicalContextText = formatHistoricalContext(historicalContext);
+
+  const prompt = SYNTHESIS_PROMPT.replace("{items}", itemsList)
+    .replace("{accountTweets}", accountTweetsList)
+    .replace("{historicalContext}", historicalContextText);
 
   try {
     const response = await client.messages.create(
