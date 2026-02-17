@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
 import { createLogger } from "../utils/logger.js";
 import { settings, sourcesConfig } from "../config/settings.js";
 import { getCAIOContextString } from "../../config/caio-context/index.js";
@@ -19,6 +21,7 @@ const logger = createLogger("Summarizer");
 const client = new Anthropic();
 
 const API_TIMEOUT_MS = 90_000;
+const DEBUG_DUMP_DIR = join(settings.paths.dataDir, "debug-dumps");
 
 // --- Individual Item Summarization ---
 
@@ -354,6 +357,49 @@ Rules:
   - weak/early signals that need monitoring.
 - Do not overstate memory confidence: if historical support is weak, say so explicitly.`;
 
+function dumpFailedResponse(
+  text: string,
+  stopReason: string,
+  error: unknown,
+  label: string
+): void {
+  try {
+    if (!existsSync(DEBUG_DUMP_DIR)) {
+      mkdirSync(DEBUG_DUMP_DIR, { recursive: true });
+    }
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const filepath = join(DEBUG_DUMP_DIR, `synthesis-${label}-${ts}.txt`);
+    const dump = [
+      `stop_reason: ${stopReason}`,
+      `error: ${error instanceof Error ? error.message : String(error)}`,
+      `timestamp: ${new Date().toISOString()}`,
+      `---`,
+      text,
+    ].join("\n");
+    writeFileSync(filepath, dump);
+    logger.warn(`Dumped failed synthesis response to: ${filepath}`);
+  } catch (dumpError) {
+    logger.warn("Failed to dump synthesis response", dumpError);
+  }
+}
+
+function parseSynthesisJson(text: string): SynthesizedTheme[] {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("No JSON found in synthesis response");
+  }
+
+  const repairedJson = jsonrepair(jsonMatch[0]);
+  const result = JSON.parse(repairedJson);
+  const themes: SynthesizedTheme[] = result.themes || [];
+
+  if (themes.length === 0) {
+    throw new Error("Synthesis returned zero themes");
+  }
+
+  return themes;
+}
+
 export async function synthesizeDigest(
   allItems: SummarizedItem[],
   accountTweets: SourceItem[],
@@ -390,34 +436,89 @@ export async function synthesizeDigest(
     .replace("{accountTweets}", accountTweetsList)
     .replace("{historicalContext}", historicalContextText);
 
+  // First attempt
+  let firstResponseText = "";
+  let firstStopReason = "unknown";
   try {
     const response = await client.messages.create(
       {
         model: settings.claude.model,
-        max_tokens: 8000,
+        max_tokens: 16000,
         messages: [{ role: "user", content: prompt }],
       },
       { timeout: API_TIMEOUT_MS },
     );
 
-    const text =
-      response.content[0].type === "text" ? response.content[0].text : "";
+    firstStopReason = response.stop_reason || "unknown";
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON found in response");
+    if (response.stop_reason === "max_tokens") {
+      logger.warn(
+        "Synthesis response was truncated (stop_reason: max_tokens) — attempting parse with jsonrepair"
+      );
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-    const themes: SynthesizedTheme[] = result.themes || [];
+    firstResponseText =
+      response.content[0].type === "text" ? response.content[0].text : "";
+
+    const themes = parseSynthesisJson(firstResponseText);
 
     logger.info(
       `Synthesized ${themes.length} themes from ${allItems.length} items`
     );
     return themes;
-  } catch (error) {
-    logger.error("Failed to synthesize digest themes", error);
-    return [];
+  } catch (firstError) {
+    logger.warn(
+      "First synthesis attempt failed, retrying with constrained prompt",
+      firstError
+    );
+
+    dumpFailedResponse(
+      firstResponseText || "(no response text — API call may have failed)",
+      firstStopReason,
+      firstError,
+      "attempt1"
+    );
+
+    // Retry with constrained output
+    try {
+      const constrainedPrompt =
+        prompt +
+        "\n\nIMPORTANT: Return at most 5 themes. Keep narratives to 2-3 sentences. Keep keyInsights to 2-3 per theme. Be concise.";
+
+      const retryResponse = await client.messages.create(
+        {
+          model: settings.claude.model,
+          max_tokens: 16000,
+          messages: [{ role: "user", content: constrainedPrompt }],
+        },
+        { timeout: API_TIMEOUT_MS },
+      );
+
+      if (retryResponse.stop_reason === "max_tokens") {
+        logger.warn(
+          "Retry synthesis response was also truncated (stop_reason: max_tokens)"
+        );
+      }
+
+      const retryText =
+        retryResponse.content[0].type === "text"
+          ? retryResponse.content[0].text
+          : "";
+
+      const themes = parseSynthesisJson(retryText);
+
+      logger.info(
+        `Synthesized ${themes.length} themes from ${allItems.length} items (retry succeeded)`
+      );
+      return themes;
+    } catch (retryError) {
+      logger.error(
+        "Failed to synthesize digest themes after retry",
+        retryError
+      );
+      dumpFailedResponse("(retry failed)", "unknown", retryError, "attempt2");
+      return [];
+    }
   }
 }
 

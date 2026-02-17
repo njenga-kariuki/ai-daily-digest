@@ -14,6 +14,7 @@ data/memory.db
 data/memory.db-shm
 data/memory.db-wal
 data/unsent/
+data/debug-dumps/
 
 # Personal CAIO context (use .example.md as template)
 config/caio-context/*.md
