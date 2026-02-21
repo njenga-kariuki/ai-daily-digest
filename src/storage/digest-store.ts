@@ -10,6 +10,8 @@ interface ProcessedIds {
   twitter: string[];
   gmail: string[];
   articles: string[];
+  rss: string[];
+  "web-scout": string[];
   lastUpdated: string;
 }
 
@@ -48,16 +50,22 @@ function saveJson<T>(path: string, data: T): void {
 
 // Processed IDs for deduplication
 export function getProcessedIds(): ProcessedIds {
-  return loadJson<ProcessedIds>(settings.paths.processedIds, {
+  const loaded = loadJson<ProcessedIds>(settings.paths.processedIds, {
     twitter: [],
     gmail: [],
     articles: [],
+    rss: [],
+    "web-scout": [],
     lastUpdated: new Date().toISOString(),
   });
+  // Ensure new fields exist on old data files
+  if (!loaded.rss) loaded.rss = [];
+  if (!loaded["web-scout"]) loaded["web-scout"] = [];
+  return loaded;
 }
 
 export function isProcessed(
-  type: "twitter" | "gmail" | "articles",
+  type: "twitter" | "gmail" | "articles" | "rss" | "web-scout",
   id: string
 ): boolean {
   const processed = getProcessedIds();
@@ -65,7 +73,7 @@ export function isProcessed(
 }
 
 export function markAsProcessed(
-  type: "twitter" | "gmail" | "articles",
+  type: "twitter" | "gmail" | "articles" | "rss" | "web-scout",
   ids: string[]
 ): void {
   const processed = getProcessedIds();
@@ -89,7 +97,7 @@ export function markAsProcessed(
 }
 
 export function filterUnprocessed<T extends { id: string }>(
-  type: "twitter" | "gmail" | "articles",
+  type: "twitter" | "gmail" | "articles" | "rss" | "web-scout",
   items: T[]
 ): T[] {
   const processed = getProcessedIds();

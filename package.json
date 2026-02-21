@@ -13,7 +13,8 @@
     "test-memory": "npm run build && node dist/src/test-memory.js",
     "backfill-memory": "node --import tsx scripts/backfill-memory.ts",
     "gmail-auth": "tsx scripts/gmail-auth.ts",
-    "twitter-auth": "tsx scripts/twitter-auth.ts"
+    "twitter-auth": "tsx scripts/twitter-auth.ts",
+    "export-bookmarks": "tsx scripts/export-bookmarks.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.17.0",
@@ -26,6 +27,7 @@
     "jsonrepair": "^3.13.2",
     "nodemailer": "^6.9.0",
     "puppeteer": "^24.36.1",
+    "rss-parser": "^3.13.0",
     "sqlite3": "^5.1.7",
     "twitter-api-v2": "^1.15.0",
     "youtube-transcript-plus": "^1.1.2"

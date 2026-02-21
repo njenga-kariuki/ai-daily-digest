@@ -20,13 +20,16 @@ export function buildDigest(
   sourceStats: {
     twitterCount: number;
     gmailCount: number;
+    rssCount?: number;
+    webScoutCount?: number;
     articlesExtracted: number;
     failedExtractions: number;
     youtubeWithTranscript?: number;
     youtubeMetadataOnly?: number;
     threadsExpanded?: number;
   },
-  errors: string[] = []
+  errors: string[] = [],
+  alsoNotable?: SummarizedItem[]
 ): Digest {
   logger.info(
     `Building digest from ${allItems.length} items and ${themes.length} themes`
@@ -38,6 +41,7 @@ export function buildDigest(
     executiveBrief: executiveBrief || undefined,
     themes,
     allItems,
+    alsoNotable,
     sourceStats,
     errors,
   };

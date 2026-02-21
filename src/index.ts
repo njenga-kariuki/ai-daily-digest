@@ -4,6 +4,8 @@ import { createLogger } from "./utils/logger.js";
 import { settings, sourcesConfig } from "./config/settings.js";
 import { fetchNewsletters } from "./sources/gmail.js";
 import { fetchTwitterContent } from "./sources/twitter.js";
+import { fetchRssFeeds } from "./sources/rss.js";
+import { fetchWebScoutResults } from "./sources/web-scout.js";
 import { extractArticles } from "./sources/article-extractor.js";
 import {
   summarizeItems,
@@ -24,6 +26,8 @@ import {
 import { sendDigestEmail } from "./output/gmail-sender.js";
 import type {
   SourceItem,
+  SummarizedItem,
+  SynthesizedTheme,
   TwitterBookmark,
   GmailNewsletter,
   HistoricalContextPack,
@@ -70,6 +74,34 @@ async function initMemoryProvider(): Promise<MemoryProvider> {
   }
 }
 
+function findOrphanedItems(
+  allItems: SummarizedItem[],
+  themes: SynthesizedTheme[]
+): SummarizedItem[] {
+  return allItems
+    .filter((item) => {
+      // Skip low-relevance items
+      if (item.aiRelevanceScore < 0.6) return false;
+
+      // Check if item is represented in any theme (reuse pattern from memory-builder)
+      const normalizedTitle = item.title.trim().toLowerCase();
+      const normalizedUrl = item.url?.trim().toLowerCase();
+
+      const inTheme = themes.some((theme) =>
+        theme.sources.some((source) => {
+          const sameTitle = source.title?.trim().toLowerCase() === normalizedTitle;
+          const sameUrl =
+            Boolean(normalizedUrl) &&
+            source.url?.trim().toLowerCase() === normalizedUrl;
+          return sameTitle || sameUrl;
+        })
+      );
+
+      return !inTheme;
+    })
+    .sort((a, b) => b.aiRelevanceScore - a.aiRelevanceScore);
+}
+
 async function runDigest(): Promise<void> {
   logger.info("Starting digest generation");
   const errors: string[] = [];
@@ -79,6 +111,8 @@ async function runDigest(): Promise<void> {
   const stats = {
     twitterCount: 0,
     gmailCount: 0,
+    rssCount: 0,
+    webScoutCount: 0,
     articlesExtracted: 0,
     failedExtractions: 0,
     youtubeWithTranscript: 0,
@@ -90,10 +124,14 @@ async function runDigest(): Promise<void> {
   let bookmarks: TwitterBookmark[] = [];
   let accountTweets: TwitterBookmark[] = [];
   let newsletters: GmailNewsletter[] = [];
+  let rssItems: SourceItem[] = [];
+  let webScoutItems: SourceItem[] = [];
 
-  const [twitterResult, newslettersResult] = await Promise.allSettled([
+  const [twitterResult, newslettersResult, rssResult, webScoutResult] = await Promise.allSettled([
     fetchTwitterContent(),
     fetchNewsletters(),
+    sourcesConfig.rss?.enabled ? fetchRssFeeds() : Promise.resolve([]),
+    sourcesConfig.webScout?.enabled ? fetchWebScoutResults() : Promise.resolve([]),
   ]);
 
   if (twitterResult.status === "fulfilled") {
@@ -122,6 +160,26 @@ async function runDigest(): Promise<void> {
     sourceFetchErrors.push(errorMessage);
   }
 
+  if (rssResult.status === "fulfilled") {
+    const rawRss = rssResult.value as SourceItem[];
+    rssItems = filterUnprocessed("rss", rawRss);
+    stats.rssCount = rssItems.length;
+    logger.info(`RSS sources: ${rssItems.length} items`);
+  } else {
+    logger.warn("RSS fetch failed (non-fatal)", rssResult.reason);
+    errors.push("RSS: " + (rssResult.reason?.message || "fetch failed"));
+  }
+
+  if (webScoutResult.status === "fulfilled") {
+    const rawWebScout = webScoutResult.value as SourceItem[];
+    webScoutItems = filterUnprocessed("web-scout", rawWebScout);
+    stats.webScoutCount = webScoutItems.length;
+    logger.info(`Web scout sources: ${webScoutItems.length} items`);
+  } else {
+    logger.warn("Web scout failed (non-fatal)", webScoutResult.reason);
+    errors.push("Web Scout: " + (webScoutResult.reason?.message || "fetch failed"));
+  }
+
   if (sourceFetchErrors.length > 0) {
     throw new Error(
       `Aborting digest to preserve integrity; required source fetch failed (${sourceFetchErrors.join("; ")})`
@@ -129,7 +187,7 @@ async function runDigest(): Promise<void> {
   }
 
   const allTwitterContent = [...bookmarks, ...accountTweets];
-  if (allTwitterContent.length === 0 && newsletters.length === 0) {
+  if (allTwitterContent.length === 0 && newsletters.length === 0 && rssItems.length === 0 && webScoutItems.length === 0) {
     logger.warn("No new content to process");
     return;
   }
@@ -202,8 +260,46 @@ async function runDigest(): Promise<void> {
     }
   }
 
+  // Phase 2.5: Extract articles for RSS items that have URLs
+  if (rssItems.length > 0) {
+    const rssUrls = rssItems.flatMap((item) => (item.url ? [item.url] : []));
+    if (rssUrls.length > 0) {
+      const rssExtractionResult = await extractArticles(rssUrls);
+      stats.articlesExtracted += rssExtractionResult.stats.articlesExtracted;
+      stats.failedExtractions += rssExtractionResult.stats.failedExtractions;
+
+      for (const item of rssItems) {
+        if (item.url) {
+          const article = rssExtractionResult.articles.get(item.url);
+          if (article?.content) {
+            item.content += "\n\n--- Source article content ---\n\n" + article.content;
+          }
+        }
+      }
+    }
+  }
+
+  // Phase 2.6: Extract articles for web scout items
+  if (webScoutItems.length > 0) {
+    const webScoutUrls = webScoutItems.flatMap((item) => (item.url ? [item.url] : []));
+    if (webScoutUrls.length > 0) {
+      const webScoutExtractionResult = await extractArticles(webScoutUrls);
+      stats.articlesExtracted += webScoutExtractionResult.stats.articlesExtracted;
+      stats.failedExtractions += webScoutExtractionResult.stats.failedExtractions;
+
+      for (const item of webScoutItems) {
+        if (item.url) {
+          const article = webScoutExtractionResult.articles.get(item.url);
+          if (article?.content) {
+            item.content += "\n\n--- Source article content ---\n\n" + article.content;
+          }
+        }
+      }
+    }
+  }
+
   logger.info(
-    `Processing ${bookmarkItems.length} bookmarks, ${accountTweetItems.length} account tweets, ${newsletterStoryItems.length} newsletter stories`
+    `Processing ${bookmarkItems.length} bookmarks, ${accountTweetItems.length} account tweets, ${newsletterStoryItems.length} newsletter stories, ${rssItems.length} RSS items, ${webScoutItems.length} web scout items`
   );
 
   // Phase 4: Summarize all individual items
@@ -212,7 +308,13 @@ async function runDigest(): Promise<void> {
   const summarizedAccountTweets = accountTweetItems.length > 0
     ? await summarizeItems(accountTweetItems)
     : [];
-  const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories, ...summarizedAccountTweets];
+  const summarizedRss = rssItems.length > 0
+    ? await summarizeItems(rssItems)
+    : [];
+  const summarizedWebScout = webScoutItems.length > 0
+    ? await summarizeItems(webScoutItems)
+    : [];
+  const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories, ...summarizedAccountTweets, ...summarizedRss, ...summarizedWebScout];
 
   let historicalContext: HistoricalContextPack | undefined;
   if (sourcesConfig.processing.memory.enabled) {
@@ -237,11 +339,19 @@ async function runDigest(): Promise<void> {
     historicalContext
   );
 
+  // Phase 5.5: Detect orphaned items (not represented in any theme)
+  const alsoNotable = findOrphanedItems(allSummarized, themes);
+  if (alsoNotable.length > 0) {
+    logger.info(
+      `Also Notable: ${alsoNotable.length} items not in themes (${allSummarized.length} total, ${allSummarized.length - alsoNotable.length} in themes)`
+    );
+  }
+
   // Phase 6: CAIO executive brief (uses themes + all items)
   const executiveBrief = await generateExecutiveBrief(allSummarized, themes);
 
   // Phase 7: Build digest
-  const digest = buildDigest(allSummarized, themes, executiveBrief, stats, errors);
+  const digest = buildDigest(allSummarized, themes, executiveBrief, stats, errors, alsoNotable);
 
   // Send email
   const emailSent = await sendDigestEmail(digest);
@@ -262,6 +372,18 @@ async function runDigest(): Promise<void> {
     "gmail",
     newsletters.map((n) => n.id)
   );
+  if (rssItems.length > 0) {
+    markAsProcessed(
+      "rss",
+      rssItems.map((item) => item.id)
+    );
+  }
+  if (webScoutItems.length > 0) {
+    markAsProcessed(
+      "web-scout",
+      webScoutItems.map((item) => item.id)
+    );
+  }
 
   if (sourcesConfig.processing.memory.enabled) {
     try {

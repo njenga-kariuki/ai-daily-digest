@@ -65,7 +65,7 @@ export async function summarizeItem(
   const prompt = SUMMARIZE_PROMPT.replace("{title}", item.title)
     .replace("{source}", item.source)
     .replace("{author}", item.author || "Unknown")
-    .replace("{content}", item.content.slice(0, 8000));
+    .replace("{content}", item.content.slice(0, 16000));
 
   try {
     const response = await client.messages.create(
@@ -327,8 +327,11 @@ For each theme:
 3. keyInsights: The specific insights that matter for this theme. Include as many or
    as few as are genuinely significant — don't pad, don't truncate. Include technical
    detail where it matters. Flag what's worth experimenting with hands-on. Note
-   enterprise/adoption implications where relevant.
-4. sources: Which items contribute to this theme (with brief snippets for attribution)
+   enterprise/adoption implications where relevant. Each insight must state WHY it
+   matters — not just THAT it exists. End each insight with the concrete implication.
+4. noveltySignal: Classify as "breaking" (new in last 24h), "evolution" (of a known
+   trend), or "confirmation" (of a previously reported topic).
+5. sources: Which items contribute to this theme (with brief snippets for attribution)
 
 Respond in JSON format only: { "themes": [...] }
 
@@ -337,13 +340,15 @@ Each theme object:
   "theme": "...",
   "narrative": "...",
   "keyInsights": ["..."],
-  "sources": [{ "title": "...", "author": "...", "sourceType": "bookmark|newsletter|account", "snippet": "...", "url": "..." }]
+  "noveltySignal": "breaking|evolution|confirmation",
+  "sources": [{ "title": "...", "author": "...", "sourceType": "bookmark|newsletter|account|rss|web-scout", "snippet": "...", "url": "..." }]
 }
 
 Rules:
 - Every source item should appear in at least one theme
 - Themes should reveal connections that aren't obvious from reading items individually
-- Prioritize themes with signal from multiple source types (tweets + newsletters + bookmarks)
+- Themes backed by multiple source types (tweets + newsletters + RSS + web scout) carry more weight. Note the source diversity.
+- Each theme must reference at least 2 items. Single-source observations should be folded into broader themes.
 - If a topic has only one source, it can be a minor theme or folded into a larger one
 - Don't force groupings — if sources are unrelated, fewer themes is fine
 - Be precise, substantive, and technically grounded. No hype language.
@@ -400,6 +405,20 @@ function parseSynthesisJson(text: string): SynthesizedTheme[] {
   return themes;
 }
 
+function enrichThemeMetadata(themes: SynthesizedTheme[]): void {
+  for (const theme of themes) {
+    // Compute source diversity: count of distinct source types
+    const sourceTypes = new Set(theme.sources.map((s) => s.sourceType));
+    theme.sourceDiversity = sourceTypes.size;
+
+    // Validate noveltySignal — default to "evolution" if missing/invalid
+    const validSignals = ["breaking", "evolution", "confirmation"] as const;
+    if (!theme.noveltySignal || !validSignals.includes(theme.noveltySignal as any)) {
+      theme.noveltySignal = "evolution";
+    }
+  }
+}
+
 export async function synthesizeDigest(
   allItems: SummarizedItem[],
   accountTweets: SourceItem[],
@@ -416,7 +435,7 @@ export async function synthesizeDigest(
   const itemsList = allItems
     .map(
       (item) =>
-        `Title: ${item.title}\nSource: ${item.source}${item.twitterSourceType ? ` (${item.twitterSourceType})` : ""}${item.newsletterName ? ` [${item.newsletterName}]` : ""}\nAuthor: ${item.author || "Unknown"}\nSummary: ${item.summary}\nKey Takeaways: ${item.keyTakeaways.join("; ")}\nURL: ${item.url || "none"}`
+        `Title: ${item.title}\nSource: ${item.source}${item.twitterSourceType ? ` (${item.twitterSourceType})` : ""}${item.newsletterName ? ` [${item.newsletterName}]` : ""}${item.feedName ? ` [${item.feedName}]` : ""}\nAuthor: ${item.author || "Unknown"}\nSummary: ${item.summary}\nKey Takeaways: ${item.keyTakeaways.join("; ")}\nSource Content (excerpt): ${item.content.slice(0, 2000)}\nURL: ${item.url || "none"}`
     )
     .join("\n\n---\n\n");
 
@@ -443,7 +462,7 @@ export async function synthesizeDigest(
     const response = await client.messages.create(
       {
         model: settings.claude.model,
-        max_tokens: 16000,
+        max_tokens: 48000,
         messages: [{ role: "user", content: prompt }],
       },
       { timeout: API_TIMEOUT_MS },
@@ -461,6 +480,7 @@ export async function synthesizeDigest(
       response.content[0].type === "text" ? response.content[0].text : "";
 
     const themes = parseSynthesisJson(firstResponseText);
+    enrichThemeMetadata(themes);
 
     logger.info(
       `Synthesized ${themes.length} themes from ${allItems.length} items`
@@ -488,7 +508,7 @@ export async function synthesizeDigest(
       const retryResponse = await client.messages.create(
         {
           model: settings.claude.model,
-          max_tokens: 16000,
+          max_tokens: 48000,
           messages: [{ role: "user", content: constrainedPrompt }],
         },
         { timeout: API_TIMEOUT_MS },
@@ -506,6 +526,7 @@ export async function synthesizeDigest(
           : "";
 
       const themes = parseSynthesisJson(retryText);
+      enrichThemeMetadata(themes);
 
       logger.info(
         `Synthesized ${themes.length} themes from ${allItems.length} items (retry succeeded)`
@@ -611,7 +632,7 @@ export async function generateExecutiveBrief(
     const response = await client.messages.create(
       {
         model: settings.claude.model,
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: "user", content: prompt }],
       },
       { timeout: API_TIMEOUT_MS },

@@ -1,6 +1,6 @@
 export interface SourceItem {
   id: string;
-  source: "twitter" | "gmail";
+  source: "twitter" | "gmail" | "rss" | "web-scout";
   title: string;
   content: string;
   url?: string;
@@ -11,6 +11,7 @@ export interface SourceItem {
   sourceAccount?: string;
   parentNewsletterId?: string;
   newsletterName?: string;
+  feedName?: string;
 }
 
 export interface TwitterBookmark {
@@ -64,6 +65,8 @@ export interface SynthesizedTheme {
   theme: string;
   narrative: string;
   keyInsights: string[];
+  noveltySignal?: "breaking" | "evolution" | "confirmation";
+  sourceDiversity?: number;
   crossDaySignals?: {
     confirmedThreads: string[];
     weakSignals: string[];
@@ -89,9 +92,12 @@ export interface Digest {
   executiveBrief?: ExecutiveBrief;
   themes: SynthesizedTheme[];
   allItems: SummarizedItem[];
+  alsoNotable?: SummarizedItem[];
   sourceStats: {
     twitterCount: number;
     gmailCount: number;
+    rssCount?: number;
+    webScoutCount?: number;
     articlesExtracted: number;
     failedExtractions: number;
     youtubeWithTranscript?: number;

@@ -21,6 +21,26 @@ export interface SourcesConfig {
     newsletterLabel: string;
     lookbackHours: number;
   };
+  rss?: {
+    enabled: boolean;
+    lookbackHours: number;
+    maxItemsPerFeed: number;
+    feeds: Array<{
+      name: string;
+      url: string;
+      category: string;
+    }>;
+  };
+  webScout?: {
+    enabled: boolean;
+    searchProvider: string;
+    maxQueriesPerRun: number;
+    maxResultsPerQuery: number;
+    queries: Array<{
+      query: string;
+      category: string;
+    }>;
+  };
   output: {
     recipientEmail: string;
     digestTime: string;
@@ -49,7 +69,7 @@ function loadSourcesConfig(): SourcesConfig {
     enabled: true,
     activeWindowDays: 60,
     maxContextCards: 20,
-    maxContextTokens: 2500,
+    maxContextTokens: 5000,
     compaction: {
       enabled: true,
     },

@@ -30,6 +30,46 @@
     "newsletterLabel": "AI-News",
     "lookbackHours": 24
   },
+  "rss": {
+    "enabled": true,
+    "lookbackHours": 24,
+    "maxItemsPerFeed": 5,
+    "feeds": [
+      { "name": "Latent Space", "url": "https://www.latent.space/feed", "category": "ai-engineering" },
+      { "name": "Interconnects", "url": "https://www.interconnects.ai/feed", "category": "ml-research" },
+      { "name": "Import AI", "url": "https://importai.substack.com/feed", "category": "ai-policy" },
+      { "name": "One Useful Thing", "url": "https://www.oneusefulthing.org/feed", "category": "enterprise-ai" },
+      { "name": "TechCabal", "url": "https://techcabal.com/feed", "category": "african-tech" },
+      { "name": "arXiv cs.AI+cs.CL", "url": "https://rss.arxiv.org/rss/cs.AI+cs.CL", "category": "research" },
+      { "name": "DeepMind Blog", "url": "https://deepmind.google/blog/rss.xml", "category": "frontier-lab" },
+      { "name": "Ahead of AI", "url": "https://magazine.sebastianraschka.com/feed", "category": "ml-deep-dives" },
+      { "name": "AI Snake Oil", "url": "https://www.normaltech.ai/feed", "category": "ai-safety" },
+      { "name": "Zvi", "url": "https://thezvi.substack.com/feed", "category": "ai-roundup" },
+      { "name": "Rest of World", "url": "https://restofworld.org/feed/latest", "category": "emerging-markets" },
+      { "name": "Fintech Takes", "url": "https://newsletter.fintechtakes.com/feed", "category": "fintech" },
+      { "name": "Fintech Blueprint", "url": "https://lex.substack.com/feed", "category": "ai-fintech" },
+      { "name": "Techpoint Africa", "url": "https://techpoint.africa/feed", "category": "african-tech" },
+      { "name": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/", "category": "ai-policy" },
+      { "name": "Algorithmic Bridge", "url": "https://thealgorithmicbridge.substack.com/feed", "category": "ai-culture" },
+      { "name": "Fintech News Africa", "url": "https://fintechnews.africa/feed/", "category": "african-fintech" },
+      { "name": "HuggingFace Papers", "url": "https://papers.takara.ai/api/feed", "category": "research" },
+      { "name": "Fintech Inside", "url": "https://fintechinside.substack.com/feed", "category": "emerging-fintech" }
+    ]
+  },
+  "webScout": {
+    "enabled": true,
+    "searchProvider": "brave",
+    "maxQueriesPerRun": 6,
+    "maxResultsPerQuery": 5,
+    "queries": [
+      { "query": "AI fintech Africa mobile money 2026", "category": "africa-fintech" },
+      { "query": "M-Pesa Safaricom AI machine learning", "category": "mpesa" },
+      { "query": "LLM enterprise deployment production", "category": "enterprise-ai" },
+      { "query": "AI regulation policy Africa Kenya", "category": "policy" },
+      { "query": "machine learning fraud detection payments", "category": "fraud" },
+      { "query": "AI agent framework production 2026", "category": "agents" }
+    ]
+  },
   "output": {
     "recipientEmail": "reader@example.com",
     "digestTime": "05:00",
@@ -40,7 +80,7 @@
       "enabled": true,
       "activeWindowDays": 60,
       "maxContextCards": 20,
-      "maxContextTokens": 2500,
+      "maxContextTokens": 5000,
       "compaction": {
         "enabled": true
       }

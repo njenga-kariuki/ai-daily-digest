@@ -104,10 +104,27 @@ function renderSynthesizedTheme(
       </div>`
       : "";
 
+  const noveltyBadge = theme.noveltySignal
+    ? (() => {
+        const badges: Record<string, { label: string; color: string }> = {
+          breaking: { label: "Breaking", color: "#d32f2f" },
+          evolution: { label: "Evolution", color: "#1565c0" },
+          confirmation: { label: "Confirmed", color: "#2e7d32" },
+        };
+        const badge = badges[theme.noveltySignal] || badges.evolution;
+        return `<span style="display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: ${badge.color}; border: 1px solid ${badge.color}; border-radius: 3px; padding: 1px 5px; margin-left: 8px; vertical-align: middle;">${badge.label}</span>`;
+      })()
+    : "";
+
+  const diversityNote =
+    theme.sourceDiversity && theme.sourceDiversity >= 2
+      ? `<span style="font-size: 11px; color: ${COLORS.tertiary}; margin-left: 8px;">${theme.sourceDiversity} source types</span>`
+      : "";
+
   return `
     <div style="margin-bottom: 36px;">
       <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: ${COLORS.text};">
-        ${index + 1}. ${escapeHtml(theme.theme)}
+        ${index + 1}. ${escapeHtml(theme.theme)}${noveltyBadge}${diversityNote}
       </h3>
       <p style="margin: 0; color: ${COLORS.text}; font-size: 14px; line-height: 1.7;">
         ${escapeHtml(theme.narrative)}
@@ -121,6 +138,12 @@ function renderSynthesizedTheme(
 function getSourceTag(item: SummarizedItem): string {
   if (item.source === "gmail") {
     return item.newsletterName || "Newsletter";
+  }
+  if (item.source === "rss") {
+    return item.feedName || "RSS";
+  }
+  if (item.source === "web-scout") {
+    return "Web Scout";
   }
   if (item.twitterSourceType === "account") {
     return "Community";
@@ -137,6 +160,8 @@ function renderSourceIndex(items: SummarizedItem[]): string {
   const community = items.filter(
     (i) => i.source === "twitter" && i.twitterSourceType === "account"
   );
+  const rssFeeds = items.filter((i) => i.source === "rss");
+  const webScout = items.filter((i) => i.source === "web-scout");
 
   function renderGroup(
     label: string,
@@ -177,7 +202,41 @@ function renderSourceIndex(items: SummarizedItem[]): string {
     <div style="margin-bottom: 48px;">
       ${renderGroup("Bookmarks", bookmarks)}
       ${renderGroup("Newsletters", newsletters)}
+      ${renderGroup("RSS Feeds", rssFeeds)}
       ${renderGroup("Community", community)}
+      ${renderGroup("Web Scout", webScout)}
+    </div>
+  `;
+}
+
+function renderAlsoNotable(items: SummarizedItem[]): string {
+  if (items.length === 0) return "";
+
+  const itemsHtml = items
+    .map((item) => {
+      const title = item.url
+        ? `<a href="${escapeHtml(item.url)}" style="color: ${COLORS.text}; text-decoration: underline; font-weight: 500;">${escapeHtml(item.title)}</a>`
+        : `<span style="font-weight: 500;">${escapeHtml(item.title)}</span>`;
+
+      const firstSentence = item.summary.split(".")[0] + ".";
+      const tag = getSourceTag(item);
+      const topicTag = item.topics[0] || "";
+
+      return `<div style="margin-bottom: 10px;">
+        <div style="font-size: 13px; line-height: 1.4;">${title}</div>
+        <div style="font-size: 12px; color: ${COLORS.secondary}; margin-top: 2px;">${escapeHtml(firstSentence)}</div>
+        <div style="font-size: 11px; color: ${COLORS.tertiary}; margin-top: 2px;">${escapeHtml(tag)}${topicTag ? ` · ${escapeHtml(topicTag)}` : ""}</div>
+      </div>`;
+    })
+    .join("");
+
+  return `
+    <div style="margin-bottom: 48px;">
+      ${renderLabel("Also Notable")}
+      <p style="margin: 0 0 16px 0; font-size: 12px; color: ${COLORS.tertiary};">
+        Items not covered in themes above but worth noting.
+      </p>
+      ${itemsHtml}
     </div>
   `;
 }
@@ -200,13 +259,20 @@ export function renderDigestHtml(digest: Digest): string {
   `
       : "";
 
+  // Also Notable
+  const alsoNotableHtml =
+    digest.alsoNotable && digest.alsoNotable.length > 0
+      ? renderAlsoNotable(digest.alsoNotable)
+      : "";
+
   // Source Index
   const sourceIndexHtml =
     digest.allItems.length > 0 ? renderSourceIndex(digest.allItems) : "";
 
   // Footer stats
   const totalSources =
-    digest.sourceStats.twitterCount + digest.sourceStats.gmailCount;
+    digest.sourceStats.twitterCount + digest.sourceStats.gmailCount +
+    (digest.sourceStats.rssCount || 0) + (digest.sourceStats.webScoutCount || 0);
   const generatedTime = digest.generatedAt.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -243,6 +309,11 @@ export function renderDigestHtml(digest: Digest): string {
     ${themesHtml}
 
     ${themesHtml ? renderSectionDivider() : ""}
+
+    <!-- Also Notable -->
+    ${alsoNotableHtml}
+
+    ${alsoNotableHtml ? renderSectionDivider() : ""}
 
     <!-- Source Index -->
     ${sourceIndexHtml}
