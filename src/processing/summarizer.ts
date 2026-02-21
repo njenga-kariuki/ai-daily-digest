@@ -20,7 +20,10 @@ const logger = createLogger("Summarizer");
 
 const client = new Anthropic();
 
-const API_TIMEOUT_MS = 90_000;
+// Use the Anthropic SDK's default timeout (600s / 10 min).
+// Synthesis needs 2-5 minutes with large input + 48K output budget.
+// Individual summarization calls complete in 5-10s but use the same
+// generous timeout — Promise.allSettled isolates any slow call.
 const DEBUG_DUMP_DIR = join(settings.paths.dataDir, "debug-dumps");
 
 // --- Individual Item Summarization ---
@@ -68,14 +71,11 @@ export async function summarizeItem(
     .replace("{content}", item.content.slice(0, 16000));
 
   try {
-    const response = await client.messages.create(
-      {
-        model: settings.claude.model,
-        max_tokens: settings.claude.maxTokens,
-        messages: [{ role: "user", content: prompt }],
-      },
-      { timeout: API_TIMEOUT_MS },
-    );
+    const response = await client.messages.create({
+      model: settings.claude.model,
+      max_tokens: settings.claude.maxTokens,
+      messages: [{ role: "user", content: prompt }],
+    });
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
@@ -216,14 +216,11 @@ export async function decomposeNewsletter(
     .replace("{body}", newsletter.body.slice(0, 15000));
 
   try {
-    const response = await client.messages.create(
-      {
-        model: settings.claude.model,
-        max_tokens: 8000,
-        messages: [{ role: "user", content: prompt }],
-      },
-      { timeout: API_TIMEOUT_MS },
-    );
+    const response = await client.messages.create({
+      model: settings.claude.model,
+      max_tokens: 8000,
+      messages: [{ role: "user", content: prompt }],
+    });
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
@@ -249,14 +246,11 @@ export async function decomposeNewsletter(
         .replace("{from}", newsletter.from)
         .replace("{body}", newsletter.body.slice(0, 10000));
 
-      const retryResponse = await client.messages.create(
-        {
-          model: settings.claude.model,
-          max_tokens: 8000,
-          messages: [{ role: "user", content: retryPrompt }],
-        },
-        { timeout: API_TIMEOUT_MS },
-      );
+      const retryResponse = await client.messages.create({
+        model: settings.claude.model,
+        max_tokens: 8000,
+        messages: [{ role: "user", content: retryPrompt }],
+      });
 
       const retryText =
         retryResponse.content[0].type === "text"
@@ -459,14 +453,11 @@ export async function synthesizeDigest(
   let firstResponseText = "";
   let firstStopReason = "unknown";
   try {
-    const response = await client.messages.create(
-      {
-        model: settings.claude.model,
-        max_tokens: 48000,
-        messages: [{ role: "user", content: prompt }],
-      },
-      { timeout: API_TIMEOUT_MS },
-    );
+    const response = await client.messages.create({
+      model: settings.claude.model,
+      max_tokens: 48000,
+      messages: [{ role: "user", content: prompt }],
+    });
 
     firstStopReason = response.stop_reason || "unknown";
 
@@ -505,14 +496,11 @@ export async function synthesizeDigest(
         prompt +
         "\n\nIMPORTANT: Return at most 5 themes. Keep narratives to 2-3 sentences. Keep keyInsights to 2-3 per theme. Be concise.";
 
-      const retryResponse = await client.messages.create(
-        {
-          model: settings.claude.model,
-          max_tokens: 48000,
-          messages: [{ role: "user", content: constrainedPrompt }],
-        },
-        { timeout: API_TIMEOUT_MS },
-      );
+      const retryResponse = await client.messages.create({
+        model: settings.claude.model,
+        max_tokens: 48000,
+        messages: [{ role: "user", content: constrainedPrompt }],
+      });
 
       if (retryResponse.stop_reason === "max_tokens") {
         logger.warn(
@@ -629,14 +617,11 @@ export async function generateExecutiveBrief(
     .replace("{items}", itemsText);
 
   try {
-    const response = await client.messages.create(
-      {
-        model: settings.claude.model,
-        max_tokens: 4000,
-        messages: [{ role: "user", content: prompt }],
-      },
-      { timeout: API_TIMEOUT_MS },
-    );
+    const response = await client.messages.create({
+      model: settings.claude.model,
+      max_tokens: 4000,
+      messages: [{ role: "user", content: prompt }],
+    });
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";

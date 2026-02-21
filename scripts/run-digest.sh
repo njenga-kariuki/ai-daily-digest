@@ -8,7 +8,7 @@ REPO_DIR="/path/to/local-project"
 NODE_BIN="/path/to/local-project"
 MAX_ATTEMPTS=3
 RETRY_DELAY_SECONDS=180
-WATCHDOG_SECONDS=2100 # 35 minutes
+WATCHDOG_SECONDS=3300 # 55 minutes
 
 cleanup_stale_processes() {
   # Kill any stale digest processes from previous runs.

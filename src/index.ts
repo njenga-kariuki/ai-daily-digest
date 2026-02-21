@@ -448,7 +448,7 @@ async function main(): Promise<void> {
   // Prevents zombie processes from blocking future scheduled runs.
   // Only active for non-daemon mode (--run-now or default single run).
   if (!isDaemon) {
-    const PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
+    const PROCESS_TIMEOUT_MS = 45 * 60 * 1000;
     const processTimer = setTimeout(() => {
       logger.error(`Process timeout (${PROCESS_TIMEOUT_MS / 60000}min) — killing to unblock future runs`);
       process.exit(1);
