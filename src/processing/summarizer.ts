@@ -318,13 +318,21 @@ For each theme:
    about this topic. Connect the dots — show what's significant, what's changing, and
    why these things matter together. Write with intellectual depth. Length should match
    the theme's complexity — a major development warrants more than a minor one.
-3. keyInsights: The specific insights that matter for this theme. Include as many or
-   as few as are genuinely significant — don't pad, don't truncate. Include technical
-   detail where it matters. Flag what's worth experimenting with hands-on. Note
-   enterprise/adoption implications where relevant. Each insight must state WHY it
-   matters — not just THAT it exists. End each insight with the concrete implication.
-4. noveltySignal: Classify as "breaking" (new in last 24h), "evolution" (of a known
-   trend), or "confirmation" (of a previously reported topic).
+3. keyInsights: Distilled takeaways that ADD to the narrative — never restate it.
+   Each insight must pass this test: if someone read only the narrative above,
+   would this insight tell them something new? If not, cut it.
+   Good insights contain: specific numbers/metrics, concrete action items or
+   things worth trying, cross-references to other themes, or implications the
+   narrative didn't cover. Bad insights just rephrase the narrative with
+   "suggesting..." or "indicating..." tacked on. Include 0-4 per theme — 0 is
+   fine if the narrative already covers everything.
+4. noveltySignal: REQUIRED — you must classify every theme as exactly one of:
+   - "breaking": genuinely new in last 24h, not covered in historical context
+   - "evolution": builds on a trend visible in historical context — state what changed
+   - "confirmation": validates something already reported — keep these themes brief
+     or fold them into a broader theme
+   Use the HISTORICAL CONTEXT section above to make this determination. If a theme's
+   core topic appeared in prior digests, it is NOT "breaking".
 5. sources: Which items contribute to this theme (with brief snippets for attribution)
 
 Respond in JSON format only: { "themes": [...] }
@@ -354,7 +362,13 @@ Rules:
   - today-only signals,
   - cross-day confirmed threads (backed by historical context),
   - weak/early signals that need monitoring.
-- Do not overstate memory confidence: if historical support is weak, say so explicitly.`;
+- Do not overstate memory confidence: if historical support is weak, say so explicitly.
+- ANTI-REDUNDANCY: Before writing each theme, check if the historical context already
+  covers the same ground. If a theme repeats a prior digest's theme with no meaningful
+  new information, either skip it entirely or fold the update into a related theme as a
+  single sentence. For themes tagged "evolution", lead with what's NEW ("Building on X,
+  today Y happened") — do not re-explain the background. Themes tagged "confirmation"
+  should be at most 1-2 sentences unless there is significant new evidence.`;
 
 function dumpFailedResponse(
   text: string,
@@ -408,6 +422,7 @@ function enrichThemeMetadata(themes: SynthesizedTheme[]): void {
     // Validate noveltySignal — default to "evolution" if missing/invalid
     const validSignals = ["breaking", "evolution", "confirmation"] as const;
     if (!theme.noveltySignal || !validSignals.includes(theme.noveltySignal as any)) {
+      logger.warn(`Theme "${theme.theme}" has missing/invalid noveltySignal "${theme.noveltySignal}" — defaulting to "evolution"`);
       theme.noveltySignal = "evolution";
     }
   }

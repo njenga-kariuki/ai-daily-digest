@@ -165,7 +165,8 @@ function renderSourceIndex(items: SummarizedItem[]): string {
 
   function renderGroup(
     label: string,
-    groupItems: SummarizedItem[]
+    groupItems: SummarizedItem[],
+    maxItems?: number
   ): string {
     if (groupItems.length === 0) return "";
 
@@ -174,7 +175,10 @@ function renderSourceIndex(items: SummarizedItem[]): string {
       (a, b) => (b.aiRelevanceScore ?? 0) - (a.aiRelevanceScore ?? 0)
     );
 
-    const itemsHtml = sorted
+    const displayed = maxItems ? sorted.slice(0, maxItems) : sorted;
+    const hiddenCount = sorted.length - displayed.length;
+
+    const itemsHtml = displayed
       .map((item) => {
         const title = item.url
           ? `<a href="${escapeHtml(item.url)}" style="color: ${COLORS.text}; text-decoration: underline; font-weight: 500;">${escapeHtml(item.title)}</a>`
@@ -190,10 +194,15 @@ function renderSourceIndex(items: SummarizedItem[]): string {
       })
       .join("");
 
+    const overflowHtml = hiddenCount > 0
+      ? `<div style="font-size: 12px; color: ${COLORS.tertiary}; margin-top: 4px;">+ ${hiddenCount} more from community feeds</div>`
+      : "";
+
     return `
       <div style="margin-bottom: 24px;">
         ${renderLabel(label)}
         ${itemsHtml}
+        ${overflowHtml}
       </div>
     `;
   }
@@ -203,7 +212,7 @@ function renderSourceIndex(items: SummarizedItem[]): string {
       ${renderGroup("Bookmarks", bookmarks)}
       ${renderGroup("Newsletters", newsletters)}
       ${renderGroup("RSS Feeds", rssFeeds)}
-      ${renderGroup("Community", community)}
+      ${renderGroup("Community", community, 10)}
       ${renderGroup("Web Scout", webScout)}
     </div>
   `;

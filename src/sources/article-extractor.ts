@@ -166,10 +166,36 @@ async function extractWithExtractus(
 
 async function resolveUrl(url: string): Promise<string> {
   if (!url.includes('t.co/')) return url;
+
+  // Primary: GET with redirect follow. fetch() resolves after headers arrive
+  // (after following redirects), so response.url is the final URL. Abort
+  // immediately to skip downloading the body.
   try {
-    const response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': getRandomUserAgent() },
+    });
+    clearTimeout(timeout);
+    controller.abort(); // don't download body
     return response.url;
   } catch {
+    logger.debug(`GET-based URL resolution failed for ${url}, trying HEAD fallback`);
+  }
+
+  // Fallback: HEAD request (some servers reject this, but worth trying)
+  try {
+    const response = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+    return response.url;
+  } catch {
+    logger.debug(`All URL resolution methods failed for ${url}`);
     return url;
   }
 }
