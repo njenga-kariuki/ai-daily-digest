@@ -72,7 +72,7 @@
   },
   "output": {
     "recipientEmail": "reader@example.com",
-    "digestTime": "05:00",
+    "digestTime": "06:00",
     "timezone": "America/Los_Angeles"
   },
   "processing": {
