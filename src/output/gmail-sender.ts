@@ -39,6 +39,12 @@ async function getGmailClient() {
   return google.gmail({ version: "v1", auth: oAuth2Client });
 }
 
+function encodeRfc2047(value: string): string {
+  if (/^[\x20-\x7E]*$/.test(value)) return value;
+  const encoded = Buffer.from(value, "utf-8").toString("base64");
+  return `=?UTF-8?B?${encoded}?=`;
+}
+
 function createMimeMessage(
   to: string,
   subject: string,
@@ -48,7 +54,7 @@ function createMimeMessage(
 
   const messageParts = [
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodeRfc2047(subject)}`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "",

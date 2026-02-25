@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { APIError } from "@anthropic-ai/sdk";
 import { jsonrepair } from "jsonrepair";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
@@ -541,6 +541,14 @@ export async function synthesizeDigest(
         retryError
       );
       dumpFailedResponse("(retry failed)", "unknown", retryError, "attempt2");
+
+      // Throw on transient API errors so the pipeline aborts and retries next run
+      if (retryError instanceof APIError && retryError.status && retryError.status >= 500) {
+        throw new Error(
+          `Synthesis failed: transient API error (${retryError.status})`
+        );
+      }
+
       return [];
     }
   }

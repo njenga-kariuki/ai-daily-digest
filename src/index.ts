@@ -339,6 +339,28 @@ async function runDigest(): Promise<void> {
     historicalContext
   );
 
+  // Quality gate: abort if synthesis or summarization failed
+  if (themes.length === 0) {
+    throw new Error(
+      "Synthesis produced zero themes (likely API outage). " +
+      "Aborting digest so items remain unprocessed for retry."
+    );
+  }
+
+  const fallbackCount = allSummarized.filter(
+    (item) =>
+      item.aiRelevanceScore === 0.5 &&
+      item.topics.length === 1 &&
+      item.topics[0] === "Uncategorized"
+  ).length;
+
+  if (allSummarized.length > 0 && fallbackCount / allSummarized.length >= 0.8) {
+    throw new Error(
+      `Summarization failed: ${fallbackCount}/${allSummarized.length} items have fallback summaries. ` +
+      "Aborting digest so items remain unprocessed for retry."
+    );
+  }
+
   // Phase 5.5: Detect orphaned items (not represented in any theme)
   const alsoNotable = findOrphanedItems(allSummarized, themes);
   if (alsoNotable.length > 0) {

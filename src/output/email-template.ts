@@ -356,5 +356,5 @@ export function renderDigestSubject(digest: Digest): string {
     "Your daily briefing";
   const truncatedHeadline =
     headline.length > 50 ? headline.slice(0, 50) + "..." : headline;
-  return `Intelligence Brief · ${dateStr} — ${truncatedHeadline}`;
+  return `Intelligence Brief | ${dateStr} - ${truncatedHeadline}`;
 }
