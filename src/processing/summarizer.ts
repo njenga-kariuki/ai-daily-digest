@@ -567,6 +567,10 @@ Based on today's synthesized themes and the underlying sources, produce a rigoro
 strategic brief. Think like an advisor who has worked inside this company for years
 and understands the specific operational realities, not a consultant parachuting in.
 
+The reader will have already consumed the full thematic analysis before reaching your
+brief. Write as a strategic capstone — reference themes by name, focus on implications
+and decisions, not restating what happened.
+
 TODAY'S THEMES:
 ---
 {themes}

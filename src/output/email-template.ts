@@ -52,7 +52,7 @@ function renderLabel(text: string): string {
 function renderExecutiveBrief(brief: ExecutiveBrief): string {
   return `
     <div style="margin-bottom: 48px;">
-      ${renderLabel("Today's Headline")}
+      ${renderLabel("Strategic Implications")}
       <p style="margin: 0 0 24px 0; font-size: 20px; font-weight: 700; color: ${COLORS.text}; line-height: 1.3;">
         ${escapeHtml(brief.headline)}
       </p>
@@ -309,11 +309,6 @@ export function renderDigestHtml(digest: Digest): string {
       </p>
     </div>
 
-    <!-- CAIO Strategic Brief -->
-    ${caioBriefHtml}
-
-    ${caioBriefHtml ? renderSectionDivider() : ""}
-
     <!-- Synthesized Themes -->
     ${themesHtml}
 
@@ -326,6 +321,11 @@ export function renderDigestHtml(digest: Digest): string {
 
     <!-- Source Index -->
     ${sourceIndexHtml}
+
+    ${sourceIndexHtml ? renderSectionDivider() : ""}
+
+    <!-- CAIO Strategic Brief (capstone) -->
+    ${caioBriefHtml}
 
     <!-- Footer -->
     <div style="border-top: 1px solid ${COLORS.divider}; padding-top: 24px; margin-top: 48px;">
