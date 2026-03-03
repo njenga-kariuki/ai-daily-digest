@@ -53,7 +53,8 @@
       { "name": "Algorithmic Bridge", "url": "https://thealgorithmicbridge.substack.com/feed", "category": "ai-culture" },
       { "name": "Fintech News Africa", "url": "https://fintechnews.africa/feed/", "category": "african-fintech" },
       { "name": "HuggingFace Papers", "url": "https://papers.takara.ai/api/feed", "category": "research" },
-      { "name": "Fintech Inside", "url": "https://fintechinside.substack.com/feed", "category": "emerging-fintech" }
+      { "name": "Fintech Inside", "url": "https://fintechinside.substack.com/feed", "category": "emerging-fintech" },
+      { "name": "SemiAnalysis", "url": "https://semianalysis.substack.com/feed", "category": "ai-infrastructure" }
     ]
   },
   "webScout": {
