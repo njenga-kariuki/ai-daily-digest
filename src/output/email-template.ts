@@ -218,6 +218,52 @@ function renderSourceIndex(items: SummarizedItem[]): string {
   `;
 }
 
+function renderCrossConnections(connections: string[]): string {
+  if (connections.length === 0) return "";
+
+  const itemsHtml = connections
+    .map(
+      (c) =>
+        `<div style="margin: 10px 0; padding-left: 12px; border-left: 2px solid ${COLORS.divider}; font-size: 14px; line-height: 1.6; color: ${COLORS.text};">${escapeHtml(c)}</div>`
+    )
+    .join("");
+
+  return `
+    <div style="margin-bottom: 40px;">
+      ${renderLabel("Connections Worth Noting")}
+      ${itemsHtml}
+    </div>
+  `;
+}
+
+function renderFootnotes(items: SummarizedItem[]): string {
+  if (items.length === 0) return "";
+
+  const sorted = [...items].sort(
+    (a, b) => (b.aiRelevanceScore ?? 0) - (a.aiRelevanceScore ?? 0)
+  );
+
+  const itemsHtml = sorted
+    .map((item) => {
+      const title = item.url
+        ? `<a href="${escapeHtml(item.url)}" style="color: ${COLORS.secondary}; text-decoration: underline;">${escapeHtml(item.title)}</a>`
+        : escapeHtml(item.title);
+      const tag = getSourceTag(item);
+      return `<div style="margin-bottom: 4px; font-size: 12px; color: ${COLORS.tertiary}; line-height: 1.5;">${title} <span style="font-size: 11px;">— ${escapeHtml(tag)}</span></div>`;
+    })
+    .join("");
+
+  return `
+    <div style="margin-bottom: 32px;">
+      ${renderLabel("Footnotes")}
+      <p style="margin: 0 0 10px 0; font-size: 11px; color: ${COLORS.tertiary};">
+        Peripheral — not AI-core.
+      </p>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
 function renderAlsoNotable(items: SummarizedItem[]): string {
   if (items.length === 0) return "";
 
@@ -268,10 +314,22 @@ export function renderDigestHtml(digest: Digest): string {
   `
       : "";
 
+  // Cross-theme connections (rendered above themes)
+  const crossConnectionsHtml =
+    digest.crossConnections && digest.crossConnections.length > 0
+      ? renderCrossConnections(digest.crossConnections)
+      : "";
+
   // Also Notable
   const alsoNotableHtml =
     digest.alsoNotable && digest.alsoNotable.length > 0
       ? renderAlsoNotable(digest.alsoNotable)
+      : "";
+
+  // Footnotes (peripheral items)
+  const footnotesHtml =
+    digest.footnotes && digest.footnotes.length > 0
+      ? renderFootnotes(digest.footnotes)
       : "";
 
   // Source Index
@@ -309,6 +367,9 @@ export function renderDigestHtml(digest: Digest): string {
       </p>
     </div>
 
+    <!-- Cross-theme Connections (above themes) -->
+    ${crossConnectionsHtml}
+
     <!-- Synthesized Themes -->
     ${themesHtml}
 
@@ -323,6 +384,11 @@ export function renderDigestHtml(digest: Digest): string {
     ${sourceIndexHtml}
 
     ${sourceIndexHtml ? renderSectionDivider() : ""}
+
+    <!-- Footnotes -->
+    ${footnotesHtml}
+
+    ${footnotesHtml ? renderSectionDivider() : ""}
 
     <!-- CAIO Strategic Brief (capstone) -->
     ${caioBriefHtml}

@@ -314,7 +314,26 @@ async function runDigest(): Promise<void> {
   const summarizedWebScout = webScoutItems.length > 0
     ? await summarizeItems(webScoutItems)
     : [];
-  const allSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories, ...summarizedAccountTweets, ...summarizedRss, ...summarizedWebScout];
+  const rawSummarized = [...summarizedBookmarks, ...summarizedNewsletterStories, ...summarizedAccountTweets, ...summarizedRss, ...summarizedWebScout];
+
+  const relevanceThreshold = sourcesConfig.processing.relevanceThreshold;
+  const footnoteThreshold = sourcesConfig.processing.footnoteThreshold;
+
+  const allSummarized: SummarizedItem[] = [];
+  const footnotes: SummarizedItem[] = [];
+  let droppedCount = 0;
+  for (const item of rawSummarized) {
+    if (item.aiRelevanceScore >= relevanceThreshold) {
+      allSummarized.push(item);
+    } else if (item.aiRelevanceScore >= footnoteThreshold) {
+      footnotes.push(item);
+    } else {
+      droppedCount++;
+    }
+  }
+  logger.info(
+    `Relevance tiering: ${allSummarized.length} high-signal (≥${relevanceThreshold}), ${footnotes.length} footnotes [${footnoteThreshold}-${relevanceThreshold}), ${droppedCount} dropped (<${footnoteThreshold})`
+  );
 
   let historicalContext: HistoricalContextPack | undefined;
   if (sourcesConfig.processing.memory.enabled) {
@@ -325,7 +344,7 @@ async function runDigest(): Promise<void> {
       );
       historicalContext = await memoryProvider.retrieve(query);
       logger.info(
-        `Historical memory retrieved: ${historicalContext.cards.length} cards, ${historicalContext.stats.tokenEstimate} estimated tokens`
+        `Historical memory retrieved: ${historicalContext.cards.length} cards, ${historicalContext.priorFlags.length} prior flags, ${historicalContext.stats.tokenEstimate} estimated tokens`
       );
     } catch (error) {
       logger.warn("Historical memory retrieval failed; using today-only context", error);
@@ -333,7 +352,7 @@ async function runDigest(): Promise<void> {
   }
 
   // Phase 5: Cross-source narrative synthesis
-  const themes = await synthesizeDigest(
+  const { themes, crossConnections } = await synthesizeDigest(
     allSummarized,
     accountTweetItems,
     historicalContext
@@ -345,6 +364,10 @@ async function runDigest(): Promise<void> {
       "Synthesis produced zero themes (likely API outage). " +
       "Aborting digest so items remain unprocessed for retry."
     );
+  }
+
+  if (crossConnections.length > 0) {
+    logger.info(`Cross-theme connections identified: ${crossConnections.length}`);
   }
 
   const fallbackCount = allSummarized.filter(
@@ -373,7 +396,18 @@ async function runDigest(): Promise<void> {
   const executiveBrief = await generateExecutiveBrief(allSummarized, themes);
 
   // Phase 7: Build digest
-  const digest = buildDigest(allSummarized, themes, executiveBrief, stats, errors, alsoNotable);
+  const digest = buildDigest(
+    allSummarized,
+    themes,
+    executiveBrief,
+    stats,
+    errors,
+    alsoNotable,
+    {
+      footnotes: footnotes.length > 0 ? footnotes : undefined,
+      crossConnections: crossConnections.length > 0 ? crossConnections : undefined,
+    }
+  );
 
   // Send email
   const emailSent = await sendDigestEmail(digest);

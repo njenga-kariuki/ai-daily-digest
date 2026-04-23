@@ -48,6 +48,8 @@ export interface SourcesConfig {
   };
   processing: {
     focusAreas: string[];
+    relevanceThreshold: number;
+    footnoteThreshold: number;
     memory: {
       enabled: boolean;
       activeWindowDays: number;
@@ -79,6 +81,8 @@ function loadSourcesConfig(): SourcesConfig {
     ...parsed,
     processing: {
       focusAreas: parsed.processing?.focusAreas || [],
+      relevanceThreshold: parsed.processing?.relevanceThreshold ?? 0.65,
+      footnoteThreshold: parsed.processing?.footnoteThreshold ?? 0.45,
       memory: {
         ...memoryDefaults,
         ...(parsed.processing?.memory || {}),

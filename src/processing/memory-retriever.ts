@@ -126,3 +126,19 @@ export function formatHistoricalContext(
     `Weak signals: ${context.weakSignals.join("; ") || "none"}`,
   ].join("\n");
 }
+
+export function formatPriorFlags(
+  context: HistoricalContextPack | undefined
+): string {
+  if (!context || !context.priorFlags || context.priorFlags.length === 0) {
+    return "(No prior watch-list flags to reconcile)";
+  }
+
+  return context.priorFlags
+    .map((card, index) => {
+      const dateStr = new Date(card.date).toISOString().slice(0, 10);
+      const label = card.themeLabel.replace(/^Flag:\s*/, "");
+      return `[F${index + 1}] ${dateStr} — ${label}`;
+    })
+    .join("\n");
+}

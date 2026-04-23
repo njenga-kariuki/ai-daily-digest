@@ -91,8 +91,10 @@ export interface Digest {
   generatedAt: Date;
   executiveBrief?: ExecutiveBrief;
   themes: SynthesizedTheme[];
+  crossConnections?: string[];
   allItems: SummarizedItem[];
   alsoNotable?: SummarizedItem[];
+  footnotes?: SummarizedItem[];
   sourceStats: {
     twitterCount: number;
     gmailCount: number;
@@ -168,6 +170,7 @@ export interface MemoryRetrievalQuery {
 
 export interface HistoricalContextPack {
   cards: MemoryCard[];
+  priorFlags: MemoryCard[];
   confirmedThreads: string[];
   weakSignals: string[];
   stats: {

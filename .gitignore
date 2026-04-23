@@ -5,7 +5,9 @@ dist/
 # Credentials
 credentials.json
 token.json
+token.json.*
 twitter-token.json
+twitter-token.json.*
 .env
 
 # Data files (generated)

@@ -21,12 +21,12 @@ interface TwitterTokens {
   clientId: string;
 }
 
-function cleanUrl(url: string): string {
+export function cleanUrl(url: string): string {
   // Strip trailing punctuation that's commonly appended in text
   return url.replace(/[)}\],;:!?.—–]+$/, '');
 }
 
-function extractUrls(text: string): string[] {
+export function extractUrls(text: string): string[] {
   const urlRegex = /https?:\/\/[^\s]+/g;
   const matches = text.match(urlRegex) || [];
   // Clean URLs and filter out Twitter's own URLs
@@ -73,7 +73,7 @@ async function refreshAccessToken(tokens: TwitterTokens): Promise<TwitterTokens>
   return newTokens;
 }
 
-async function getTwitterClient(): Promise<TwitterApi> {
+export async function getTwitterClient(): Promise<TwitterApi> {
   let tokens = loadTokens();
 
   if (!tokens) {
@@ -92,8 +92,16 @@ async function getTwitterClient(): Promise<TwitterApi> {
     if (now > expiresAt - 5 * 60 * 1000) {
       try {
         tokens = await refreshAccessToken(tokens);
-      } catch (error) {
-        logger.warn("Failed to refresh token, trying with existing token");
+      } catch (error: any) {
+        const hoursExpired = Math.round((now - expiresAt) / (3600 * 1000));
+        logger.error(
+          `Twitter token refresh failed (access token expired ~${hoursExpired}h ago). ` +
+          `Re-authenticate: rm twitter-token.json && npm run twitter-auth`
+        );
+        logger.debug("Refresh error details:", error?.message || error);
+        throw new Error(
+          "Twitter OAuth token expired and refresh failed. Re-authenticate: rm twitter-token.json && npm run twitter-auth"
+        );
       }
     }
   }
@@ -114,7 +122,7 @@ interface TweetData {
   };
 }
 
-async function fetchThreadContent(
+export async function fetchThreadContent(
   client: TwitterApi,
   conversationId: string,
   authorId: string
@@ -313,6 +321,20 @@ export async function fetchTwitterContent(): Promise<TwitterFetchResult> {
   let bookmarks: TwitterBookmark[] = [];
   let accountTweets: TwitterBookmark[] = [];
   let threadsExpanded = 0;
+
+  // Check if both failed with auth errors — surface instead of returning empty
+  const bookmarkAuthFail = bookmarksResult.status === "rejected" &&
+    (bookmarksResult.reason?.code === 401 || bookmarksResult.reason?.message?.includes("Re-authenticate"));
+  const accountAuthFail = accountResult.status === "rejected" &&
+    (accountResult.reason?.code === 401 || accountResult.reason?.message?.includes("Re-authenticate"));
+
+  if (bookmarkAuthFail && accountAuthFail) {
+    const error = new Error(
+      "Twitter API authentication failed for all requests. Re-authenticate: rm twitter-token.json && npm run twitter-auth"
+    );
+    logger.error(error.message);
+    throw error;
+  }
 
   if (bookmarksResult.status === "fulfilled") {
     bookmarks = bookmarksResult.value.bookmarks;

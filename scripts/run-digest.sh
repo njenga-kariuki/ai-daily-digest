@@ -6,6 +6,11 @@ set -euo pipefail
 
 REPO_DIR="/path/to/local-project"
 NODE_BIN="/path/to/local-project"
+
+# Disable Node 21's Happy Eyeballs. Its 250ms per-attempt timeout is shorter
+# than the Nairobi→Seattle RTT to Google endpoints, causing spurious ETIMEDOUTs
+# on oauth2.googleapis.com and Substack-hosted RSS feeds.
+export NODE_OPTIONS="--no-network-family-autoselection"
 MAX_ATTEMPTS=3
 RETRY_DELAY_SECONDS=180
 WATCHDOG_SECONDS=3300 # 55 minutes

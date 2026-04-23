@@ -54,6 +54,7 @@ export class NoopMemoryProvider implements MemoryProvider {
   async retrieve(_query: MemoryRetrievalQuery): Promise<HistoricalContextPack> {
     return {
       cards: [],
+      priorFlags: [],
       confirmedThreads: [],
       weakSignals: [],
       stats: {

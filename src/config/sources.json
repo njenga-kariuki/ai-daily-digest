@@ -77,6 +77,8 @@
     "timezone": "America/Los_Angeles"
   },
   "processing": {
+    "relevanceThreshold": 0.65,
+    "footnoteThreshold": 0.45,
     "memory": {
       "enabled": true,
       "activeWindowDays": 60,

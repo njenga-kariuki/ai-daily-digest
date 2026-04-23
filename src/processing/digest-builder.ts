@@ -29,7 +29,11 @@ export function buildDigest(
     threadsExpanded?: number;
   },
   errors: string[] = [],
-  alsoNotable?: SummarizedItem[]
+  alsoNotable?: SummarizedItem[],
+  options?: {
+    crossConnections?: string[];
+    footnotes?: SummarizedItem[];
+  }
 ): Digest {
   logger.info(
     `Building digest from ${allItems.length} items and ${themes.length} themes`
@@ -40,8 +44,10 @@ export function buildDigest(
     generatedAt: new Date(),
     executiveBrief: executiveBrief || undefined,
     themes,
+    crossConnections: options?.crossConnections,
     allItems,
     alsoNotable,
+    footnotes: options?.footnotes,
     sourceStats,
     errors,
   };

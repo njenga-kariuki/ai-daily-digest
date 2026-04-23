@@ -47,6 +47,7 @@ async function getAuthUrl(): Promise<{ oAuth2Client: any; authUrl: string }> {
 
   const authUrl = oAuth2Client.generateAuthUrl({
     access_type: "offline",
+    prompt: "consent",
     scope: SCOPES,
   });
 

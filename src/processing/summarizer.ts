@@ -5,7 +5,7 @@ import { join } from "path";
 import { createLogger } from "../utils/logger.js";
 import { settings, sourcesConfig } from "../config/settings.js";
 import { getCAIOContextString } from "../../config/caio-context/index.js";
-import { formatHistoricalContext } from "./memory-retriever.js";
+import { formatHistoricalContext, formatPriorFlags } from "./memory-retriever.js";
 import type {
   SourceItem,
   SummarizedItem,
@@ -308,6 +308,11 @@ HISTORICAL CONTEXT (PAST 60 DAYS + LINKED PRIOR):
 {historicalContext}
 ---
 
+PRIOR FLAGS TO RECONCILE (watch-list items from prior digests, last 14 days):
+---
+{priorFlags}
+---
+
 Identify the thematic threads that connect multiple sources. Let the material determine
 how many themes there are — a light news day might have 2-3, a dense day might have 8+.
 Don't force groupings and don't artificially cap.
@@ -335,7 +340,23 @@ For each theme:
    core topic appeared in prior digests, it is NOT "breaking".
 5. sources: Which items contribute to this theme (with brief snippets for attribution)
 
-Respond in JSON format only: { "themes": [...] }
+After producing themes, scan for underlying signals that span multiple themes and
+output a top-level "crossConnections" array (0-3 items).
+
+A crossConnection must identify a SPECIFIC non-obvious pattern that connects items
+living in different themes. It must name the items it draws on.
+
+GOOD: "Fintech + open-source + infra signals all point to emerging-market operators
+betting on pluggable AI stacks: Fido's ML-driven underwriting (fintech theme),
+Simon Willison on escape hatches (open-source theme), SemiAnalysis on GPU arbitrage
+(infra theme)."
+BAD: "Several themes relate to enterprise adoption." (too generic, no specifics)
+BAD: Restating a theme's own content.
+
+Output 0 crossConnections if there is no genuine cross-theme pattern today.
+Do not invent or force connections. One real stitch beats three shallow ones.
+
+Respond in JSON format only: { "themes": [...], "crossConnections": [...] }
 
 Each theme object:
 {
@@ -345,6 +366,9 @@ Each theme object:
   "noveltySignal": "breaking|evolution|confirmation",
   "sources": [{ "title": "...", "author": "...", "sourceType": "bookmark|newsletter|account|rss|web-scout", "snippet": "...", "url": "..." }]
 }
+
+crossConnections is an array of strings. Each string is a self-contained sentence
+or two naming the themes/items it bridges.
 
 Rules:
 - Every source item should appear in at least one theme
@@ -356,6 +380,15 @@ Rules:
 - Be precise, substantive, and technically grounded. No hype language.
 - When research papers or technical breakthroughs come up, explain WHY they matter,
   not just THAT they exist.
+- CONCRETENESS — preserve specifics. If sources mention specific numbers (prices,
+  benchmarks, percentages, token counts, latencies, sample sizes), model/version
+  strings, paper titles, repo names, code snippets, or direct quotes, the theme
+  narrative MUST carry them through with attribution inline.
+  GOOD: "Simon Willison documented ChatGPT Images 2.0 at $0.40 per 3840x2160 render,
+  noting it failed its own 'Where's Waldo' test."
+  BAD: "Image generation quality and pricing are evolving."
+  A narrative that strips a concrete number from a source is incomplete. If multiple
+  sources cite the same stat, cite the primary one and note corroboration.
 - Don't artificially separate "technical" from "business" — if a model release has
   enterprise implications, say so in the same theme.
 - Clearly separate:
@@ -368,7 +401,14 @@ Rules:
   new information, either skip it entirely or fold the update into a related theme as a
   single sentence. For themes tagged "evolution", lead with what's NEW ("Building on X,
   today Y happened") — do not re-explain the background. Themes tagged "confirmation"
-  should be at most 1-2 sentences unless there is significant new evidence.`;
+  should be at most 1-2 sentences unless there is significant new evidence.
+- RECONCILE PRIOR FLAGS: For any PRIOR FLAG listed above, check whether today's
+  sources bear on it. If they do, reconcile explicitly inside the relevant theme's
+  narrative using this format: "Flagged [date]: [short flag] — today's [source]
+  confirms/refutes/extends that call because [specific evidence]." Do NOT fabricate
+  reconciliation: if nothing in today's sources bears on a prior flag, stay silent on
+  that flag. One or two genuine reconciliations per digest is better than forcing
+  updates on every flag.`;
 
 function dumpFailedResponse(
   text: string,
@@ -396,7 +436,12 @@ function dumpFailedResponse(
   }
 }
 
-function parseSynthesisJson(text: string): SynthesizedTheme[] {
+interface SynthesisResult {
+  themes: SynthesizedTheme[];
+  crossConnections: string[];
+}
+
+function parseSynthesisJson(text: string): SynthesisResult {
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error("No JSON found in synthesis response");
@@ -410,7 +455,14 @@ function parseSynthesisJson(text: string): SynthesizedTheme[] {
     throw new Error("Synthesis returned zero themes");
   }
 
-  return themes;
+  const crossConnectionsRaw: unknown = result.crossConnections || [];
+  const crossConnections: string[] = Array.isArray(crossConnectionsRaw)
+    ? crossConnectionsRaw
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .slice(0, 3)
+    : [];
+
+  return { themes, crossConnections };
 }
 
 function enrichThemeMetadata(themes: SynthesizedTheme[]): void {
@@ -432,9 +484,9 @@ export async function synthesizeDigest(
   allItems: SummarizedItem[],
   accountTweets: SourceItem[],
   historicalContext?: HistoricalContextPack
-): Promise<SynthesizedTheme[]> {
+): Promise<SynthesisResult> {
   if (allItems.length === 0 && accountTweets.length === 0) {
-    return [];
+    return { themes: [], crossConnections: [] };
   }
 
   logger.info(
@@ -459,10 +511,12 @@ export async function synthesizeDigest(
       : "(No community tweets today)";
 
   const historicalContextText = formatHistoricalContext(historicalContext);
+  const priorFlagsText = formatPriorFlags(historicalContext);
 
   const prompt = SYNTHESIS_PROMPT.replace("{items}", itemsList)
     .replace("{accountTweets}", accountTweetsList)
-    .replace("{historicalContext}", historicalContextText);
+    .replace("{historicalContext}", historicalContextText)
+    .replace("{priorFlags}", priorFlagsText);
 
   // First attempt
   let firstResponseText = "";
@@ -485,13 +539,13 @@ export async function synthesizeDigest(
     firstResponseText =
       response.content[0].type === "text" ? response.content[0].text : "";
 
-    const themes = parseSynthesisJson(firstResponseText);
-    enrichThemeMetadata(themes);
+    const parsed = parseSynthesisJson(firstResponseText);
+    enrichThemeMetadata(parsed.themes);
 
     logger.info(
-      `Synthesized ${themes.length} themes from ${allItems.length} items`
+      `Synthesized ${parsed.themes.length} themes, ${parsed.crossConnections.length} cross-connections from ${allItems.length} items`
     );
-    return themes;
+    return parsed;
   } catch (firstError) {
     logger.warn(
       "First synthesis attempt failed, retrying with constrained prompt",
@@ -528,13 +582,13 @@ export async function synthesizeDigest(
           ? retryResponse.content[0].text
           : "";
 
-      const themes = parseSynthesisJson(retryText);
-      enrichThemeMetadata(themes);
+      const parsed = parseSynthesisJson(retryText);
+      enrichThemeMetadata(parsed.themes);
 
       logger.info(
-        `Synthesized ${themes.length} themes from ${allItems.length} items (retry succeeded)`
+        `Synthesized ${parsed.themes.length} themes, ${parsed.crossConnections.length} cross-connections from ${allItems.length} items (retry succeeded)`
       );
-      return themes;
+      return parsed;
     } catch (retryError) {
       logger.error(
         "Failed to synthesize digest themes after retry",
@@ -549,7 +603,7 @@ export async function synthesizeDigest(
         );
       }
 
-      return [];
+      return { themes: [], crossConnections: [] };
     }
   }
 }

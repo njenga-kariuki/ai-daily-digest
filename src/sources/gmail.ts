@@ -97,6 +97,25 @@ async function getGmailClient() {
   const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf-8"));
   const token = JSON.parse(readFileSync(TOKEN_PATH, "utf-8"));
 
+  // Warn if refresh token is approaching expiry (testing-mode apps only)
+  if (token.refresh_token_expires_in && token.expiry_date) {
+    const tokenIssuedAt = token.expiry_date - 3600 * 1000; // access token lifetime = 1hr
+    const refreshExpiresAt = tokenIssuedAt + token.refresh_token_expires_in * 1000;
+    const remainingMs = refreshExpiresAt - Date.now();
+    const totalMs = token.refresh_token_expires_in * 1000;
+
+    if (remainingMs <= 0) {
+      logger.error(
+        "Gmail refresh token has expired. Re-authenticate: rm token.json && npm run gmail-auth"
+      );
+    } else if (remainingMs < totalMs * 0.2) {
+      const remainingHours = Math.round(remainingMs / (3600 * 1000));
+      logger.warn(
+        `Gmail refresh token expires in ~${remainingHours} hours. Re-authenticate soon: rm token.json && npm run gmail-auth`
+      );
+    }
+  }
+
   const { client_secret, client_id, redirect_uris } =
     credentials.installed || credentials.web;
 
@@ -168,7 +187,14 @@ export async function fetchNewsletters(): Promise<GmailNewsletter[]> {
     }
 
     return newsletters;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.response?.data?.error === "invalid_grant" || error?.message?.includes("invalid_grant")) {
+      const actionableError = new Error(
+        "Gmail OAuth token expired. Re-authenticate: rm token.json && npm run gmail-auth"
+      );
+      logger.error(actionableError.message);
+      throw actionableError;
+    }
     logger.error("Failed to fetch newsletters", error);
     throw error;
   }

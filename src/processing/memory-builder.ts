@@ -324,6 +324,39 @@ function maybeLinkItemToThemes(
   return links;
 }
 
+export const WATCH_LIST_FLAG_TAG = "watch-list-flag";
+
+function cardIdForFlag(digestId: string, index: number): string {
+  return `${digestId}:flag:${index}`;
+}
+
+function buildFlagCard(
+  digest: Digest,
+  flagText: string,
+  index: number
+): MemoryCard {
+  const digestDate = toDate(digest.generatedAt);
+  const entities = extractEntitiesFromText(flagText);
+  const shortLabel = flagText.length > 80 ? `${flagText.slice(0, 77)}...` : flagText;
+
+  return {
+    cardId: cardIdForFlag(digest.id, index),
+    digestId: digest.id,
+    date: digestDate,
+    themeLabel: `Flag: ${shortLabel}`,
+    summary: `Watch-list flag from ${digestDate.toISOString().slice(0, 10)}: ${flagText}`,
+    entities,
+    tags: uniqueStrings([WATCH_LIST_FLAG_TAG, ...entities.slice(0, 6)]).slice(0, 24),
+    evidenceRefs: [{ itemId: digest.id, title: digest.executiveBrief?.headline }],
+    sourceTypes: ["executive-brief"],
+    importanceScore: 0.7,
+    noveltyScore: 0.55,
+    confidenceScore: 0.6,
+    createdAt: digestDate,
+    updatedAt: digestDate,
+  };
+}
+
 export function buildMemoryArtifacts(digest: Digest): BuiltMemoryArtifacts {
   const themeCards = digest.themes.map((theme, index) =>
     buildThemeCard(digest, theme, index)
@@ -338,8 +371,13 @@ export function buildMemoryArtifacts(digest: Digest): BuiltMemoryArtifacts {
     maybeLinkItemToThemes(itemCard, themeCards)
   );
 
+  const watchList = digest.executiveBrief?.watchList || [];
+  const flagCards = watchList
+    .filter((flag) => typeof flag === "string" && flag.trim().length > 0)
+    .map((flag, index) => buildFlagCard(digest, flag.trim(), index));
+
   return {
-    cards: [...themeCards, ...itemCards],
+    cards: [...themeCards, ...itemCards, ...flagCards],
     links,
   };
 }

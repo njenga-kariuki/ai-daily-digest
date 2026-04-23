@@ -434,8 +434,26 @@ export class SqliteMemoryProvider implements MemoryProvider {
         .map((entry) => entry.card.themeLabel)
     ).slice(0, 8);
 
+    // Prior flags: watch-list items persisted from prior digests' exec briefs.
+    // Retrieved separately so synthesis can reconcile them against today's news.
+    const flagCutoff = new Date(query.now);
+    flagCutoff.setDate(flagCutoff.getDate() - 14);
+    const flagRows = await this.query<MemoryCardRow[]>(
+      `
+        SELECT c.*
+        FROM memory_cards c
+        WHERE c.tags_json LIKE '%watch-list-flag%'
+          AND c.date >= ${sqlText(toIso(flagCutoff))}
+          AND c.date < ${sqlText(toIso(query.now))}
+        ORDER BY c.date DESC
+        LIMIT 8;
+      `
+    );
+    const priorFlags = flagRows.map(rowToCard);
+
     return {
       cards: budgeted.cards,
+      priorFlags,
       confirmedThreads,
       weakSignals,
       stats: {
