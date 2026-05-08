@@ -1,0 +1,99 @@
+import { google } from "googleapis";
+import { readFileSync, existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { execSync } from "child_process";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const CREDENTIALS_PATH = join(__dirname, "../credentials.json");
+const TOKEN_PATH = join(__dirname, "../token.json");
+const LOG_PATH = "/path/to/local-project";
+
+const RECIPIENT = "njengak@me.com";
+
+async function getGmailClient() {
+  if (!existsSync(CREDENTIALS_PATH) || !existsSync(TOKEN_PATH)) {
+    throw new Error(
+      `Gmail credentials not configured: missing ${CREDENTIALS_PATH} or ${TOKEN_PATH}`
+    );
+  }
+
+  const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf-8"));
+  const token = JSON.parse(readFileSync(TOKEN_PATH, "utf-8"));
+
+  const { client_secret, client_id, redirect_uris } =
+    credentials.installed || credentials.web;
+
+  const oAuth2Client = new google.auth.OAuth2(
+    client_id,
+    client_secret,
+    redirect_uris[0]
+  );
+
+  oAuth2Client.setCredentials(token);
+  return google.gmail({ version: "v1", auth: oAuth2Client });
+}
+
+function getRecentLogTail(lines: number = 100): string {
+  try {
+    if (!existsSync(LOG_PATH)) {
+      return `(log file not found at ${LOG_PATH})`;
+    }
+    return execSync(`tail -${lines} "${LOG_PATH}"`).toString();
+  } catch (err) {
+    return `(could not read log: ${(err as Error).message})`;
+  }
+}
+
+function createPlainTextMime(to: string, subject: string, body: string): string {
+  return [
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    body,
+  ].join("\r\n");
+}
+
+async function main() {
+  const reason = process.argv[2] || "All retry attempts failed";
+  const date = new Date().toISOString();
+  const subject = `[AI Digest] FAILED — ${date}`;
+  const logTail = getRecentLogTail(100);
+
+  const body = [
+    `The AI Daily Digest failed at ${date}.`,
+    "",
+    `Reason: ${reason}`,
+    "",
+    "Last 100 log lines:",
+    "----------------------------------------",
+    logTail,
+    "----------------------------------------",
+    "",
+    `Full log: ${LOG_PATH}`,
+  ].join("\n");
+
+  const gmail = await getGmailClient();
+  const mime = createPlainTextMime(RECIPIENT, subject, body);
+  const encoded = Buffer.from(mime)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw: encoded },
+  });
+
+  console.log(`Failure notification sent to ${RECIPIENT}`);
+}
+
+main().catch((err) => {
+  console.error("Failed to send failure notification:", err);
+  process.exit(1);
+});

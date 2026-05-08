@@ -13,6 +13,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/**/*", "config/**/*", "scripts/backfill-memory.ts"],
+  "include": ["src/**/*", "config/**/*", "scripts/backfill-memory.ts", "scripts/notify-failure.ts"],
   "exclude": ["node_modules", "dist"]
 }

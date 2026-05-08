@@ -24,6 +24,34 @@ cleanup_stale_processes() {
   pkill -f "chrome.*--headless" 2>/dev/null || true
 }
 
+# When launchd wakes the Mac to fire this job, the WiFi adapter / mDNSResponder
+# is often not ready yet. Source fetches issued in the first ~5s after wake
+# return getaddrinfo ENOTFOUND instantly because there's no resolver to query.
+# Block here until basic connectivity + DNS for our critical hosts works,
+# capped at 180s. If the cap is hit, proceed anyway — the run will fail loudly
+# and surface in the failure notification.
+wait_for_network() {
+  local elapsed=0
+  local max_wait=180
+  while [[ $elapsed -lt $max_wait ]]; do
+    if curl -sS --max-time 5 -o /dev/null https://1.1.1.1 2>/dev/null \
+       && nslookup api.anthropic.com >/dev/null 2>&1 \
+       && nslookup oauth2.googleapis.com >/dev/null 2>&1; then
+      if [[ $elapsed -gt 0 ]]; then
+        echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Network ready after ${elapsed}s"
+      fi
+      return 0
+    fi
+    if [[ $elapsed -eq 0 ]]; then
+      echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Waiting for network/DNS to be ready..."
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+  done
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN: network not ready after ${max_wait}s, attempting anyway"
+  return 1
+}
+
 run_attempt() {
   "$NODE_BIN" tsx src/index.ts --run-now &
   MAIN_PID=$!
@@ -54,13 +82,22 @@ LAST_EXIT=1
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Digest attempt $attempt/$MAX_ATTEMPTS starting"
   cleanup_stale_processes
+  wait_for_network || true
 
-  if run_attempt; then
+  # Capture exit code into a variable BEFORE the if-test.
+  # Bash sets $? to 0 after `fi` when the if-branch didn't execute, which
+  # would silently mask all failures from launchd if we relied on `$?` here.
+  set +e
+  run_attempt
+  ATTEMPT_EXIT=$?
+  set -e
+
+  if [[ $ATTEMPT_EXIT -eq 0 ]]; then
     echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Digest attempt $attempt succeeded"
     exit 0
   fi
 
-  LAST_EXIT=$?
+  LAST_EXIT=$ATTEMPT_EXIT
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Digest attempt $attempt failed with exit code $LAST_EXIT"
 
   if [[ "$attempt" -lt "$MAX_ATTEMPTS" ]]; then
@@ -68,5 +105,10 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     sleep "$RETRY_DELAY_SECONDS"
   fi
 done
+
+# All attempts exhausted — notify the user so failures stop being silent.
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] All $MAX_ATTEMPTS attempts failed (last exit: $LAST_EXIT); sending failure notification"
+"$NODE_BIN" tsx scripts/notify-failure.ts "All $MAX_ATTEMPTS digest attempts failed (last exit: $LAST_EXIT)" \
+  || echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN: failure notification also failed; check ${HOME}/Library/Logs/ai-daily-digest.log"
 
 exit "$LAST_EXIT"
