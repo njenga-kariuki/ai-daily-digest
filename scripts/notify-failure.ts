@@ -7,11 +7,24 @@ import { execSync } from "child_process";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const CREDENTIALS_PATH = join(__dirname, "../credentials.json");
-const TOKEN_PATH = join(__dirname, "../token.json");
+const PROJECT_ROOT = join(__dirname, "..");
+const CREDENTIALS_PATH = join(PROJECT_ROOT, "credentials.json");
+const TOKEN_PATH = join(PROJECT_ROOT, "token.json");
+const SOURCES_CONFIG_PATH = join(PROJECT_ROOT, "src/config/sources.json");
 const LOG_PATH = "/path/to/local-project";
 
-const RECIPIENT = "njengak@me.com";
+function getRecipient(): string {
+  try {
+    const config = JSON.parse(readFileSync(SOURCES_CONFIG_PATH, "utf-8"));
+    const recipient = config?.output?.recipientEmail;
+    if (typeof recipient === "string" && recipient.includes("@")) {
+      return recipient;
+    }
+  } catch {
+    // fall through
+  }
+  return "reader@example.com";
+}
 
 async function getGmailClient() {
   if (!existsSync(CREDENTIALS_PATH) || !existsSync(TOKEN_PATH)) {
@@ -63,6 +76,7 @@ async function main() {
   const date = new Date().toISOString();
   const subject = `[AI Digest] FAILED — ${date}`;
   const logTail = getRecentLogTail(100);
+  const recipient = getRecipient();
 
   const body = [
     `The AI Daily Digest failed at ${date}.`,
@@ -78,7 +92,7 @@ async function main() {
   ].join("\n");
 
   const gmail = await getGmailClient();
-  const mime = createPlainTextMime(RECIPIENT, subject, body);
+  const mime = createPlainTextMime(recipient, subject, body);
   const encoded = Buffer.from(mime)
     .toString("base64")
     .replace(/\+/g, "-")
@@ -90,7 +104,7 @@ async function main() {
     requestBody: { raw: encoded },
   });
 
-  console.log(`Failure notification sent to ${RECIPIENT}`);
+  console.log(`Failure notification sent to ${recipient}`);
 }
 
 main().catch((err) => {
