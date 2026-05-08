@@ -518,15 +518,18 @@ export async function synthesizeDigest(
     .replace("{historicalContext}", historicalContextText)
     .replace("{priorFlags}", priorFlagsText);
 
-  // First attempt
+  // First attempt — streamed to keep the TCP connection actively transmitting
+  // and avoid idle-timeout resets on long (10+ min) Opus 1M responses.
   let firstResponseText = "";
   let firstStopReason = "unknown";
   try {
-    const response = await client.messages.create({
-      model: settings.claude.model,
-      max_tokens: 48000,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await client.messages
+      .stream({
+        model: settings.claude.model,
+        max_tokens: 48000,
+        messages: [{ role: "user", content: prompt }],
+      })
+      .finalMessage();
 
     firstStopReason = response.stop_reason || "unknown";
 
@@ -565,11 +568,13 @@ export async function synthesizeDigest(
         prompt +
         "\n\nIMPORTANT: Return at most 5 themes. Keep narratives to 2-3 sentences. Keep keyInsights to 2-3 per theme. Be concise.";
 
-      const retryResponse = await client.messages.create({
-        model: settings.claude.model,
-        max_tokens: 48000,
-        messages: [{ role: "user", content: constrainedPrompt }],
-      });
+      const retryResponse = await client.messages
+        .stream({
+          model: settings.claude.model,
+          max_tokens: 48000,
+          messages: [{ role: "user", content: constrainedPrompt }],
+        })
+        .finalMessage();
 
       if (retryResponse.stop_reason === "max_tokens") {
         logger.warn(
