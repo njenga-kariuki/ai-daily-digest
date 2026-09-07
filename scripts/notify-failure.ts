@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,7 +11,7 @@ const PROJECT_ROOT = join(__dirname, "..");
 const CREDENTIALS_PATH = join(PROJECT_ROOT, "credentials.json");
 const TOKEN_PATH = join(PROJECT_ROOT, "token.json");
 const SOURCES_CONFIG_PATH = join(PROJECT_ROOT, "src/config/sources.json");
-const LOG_PATH = "/path/to/local-project";
+const LOG_PATH = process.env.DIGEST_LOG_PATH || join(PROJECT_ROOT, "data/ai-daily-digest.log");
 
 function getRecipient(): string {
   try {
@@ -23,7 +23,7 @@ function getRecipient(): string {
   } catch {
     // fall through
   }
-  return "reader@example.com";
+  throw new Error("Set output.recipientEmail in src/config/sources.json before sending notifications.");
 }
 
 async function getGmailClient() {
@@ -54,7 +54,7 @@ function getRecentLogTail(lines: number = 100): string {
     if (!existsSync(LOG_PATH)) {
       return `(log file not found at ${LOG_PATH})`;
     }
-    return execSync(`tail -${lines} "${LOG_PATH}"`).toString();
+    return execFileSync("tail", ["-n", String(lines), LOG_PATH], { encoding: "utf-8" });
   } catch (err) {
     return `(could not read log: ${(err as Error).message})`;
   }

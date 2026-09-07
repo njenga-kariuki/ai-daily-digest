@@ -4,9 +4,9 @@ import { dirname, join } from "path";
 
 const CONTEXT_DIR = dirname(fileURLToPath(import.meta.url));
 
-const FALLBACK_CONTEXT = `AI leader, leading enterprise AI transformation.
-Key areas: M-Pesa mobile payments platform, financial inclusion across Africa,
-fraud detection, customer experience, and operational efficiency.
+const FALLBACK_CONTEXT = `AI leader evaluating research, product opportunities, and enterprise adoption.
+Key areas: model capabilities, practical deployment, economics, governance,
+and the implications of AI for teams and customers.
 
 Add your actual job description to config/caio-context/job-description.md
 for more specific, grounded strategic insights.`;

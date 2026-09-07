@@ -24,7 +24,7 @@ npm run dev -- --daemon
 # Claude API
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Twitter/X API (Basic tier, $200/mo required for bookmarks)
+# Twitter/X API (an API plan that permits bookmark access)
 TWITTER_API_KEY=...
 TWITTER_API_SECRET=...
 TWITTER_ACCESS_TOKEN=...
@@ -80,7 +80,7 @@ src/
 
 ## Troubleshooting
 
-**Twitter API 403 error**: Ensure you have Basic tier ($200/mo) and OAuth 1.0a user context tokens, not just a bearer token.
+**Twitter API 403 error**: Ensure you have an API plan that permits bookmark access and OAuth 1.0a user context tokens, not just a bearer token.
 
 **Gmail auth fails**: Delete `token.json` and re-run `npm run gmail-auth`.
 

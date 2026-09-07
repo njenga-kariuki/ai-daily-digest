@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-REPO_DIR="/path/to/local-project"
-NODE_BIN="/path/to/local-project"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+NODE_BIN="${DIGEST_NPX_BIN:-$(command -v npx)}"
 
 # Disable Node 21's Happy Eyeballs. Its 250ms per-attempt timeout is shorter
 # than the Nairobi→Seattle RTT to Google endpoints, causing spurious ETIMEDOUTs
